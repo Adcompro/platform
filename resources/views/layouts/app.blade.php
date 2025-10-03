@@ -941,7 +941,7 @@
                     </a>
 
                     <!-- Time Tracking -->
-                    <button @click="activeSection = 'timetracking'"
+                    <button @click="activeSection = 'timetracking'; window.location.href = '{{ route('time-entries.index') }}'"
                             :class="activeSection === 'timetracking' ? 'active' : ''"
                             class="flex flex-col items-center justify-center w-16 h-16 rounded-lg px-1 py-2"
                             title="Time Tracking"
@@ -961,7 +961,7 @@
                     </button>
 
                     <!-- Invoices -->
-                    <button @click="activeSection = 'invoices'"
+                    <button @click="activeSection = 'invoices'; window.location.href = '{{ route('invoices.index') }}'"
                             :class="activeSection === 'invoices' ? 'active' : ''"
                             class="flex flex-col items-center justify-center w-16 h-16 rounded-lg relative px-1 py-2"
                             title="Invoices"

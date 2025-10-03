@@ -728,4 +728,63 @@ class CustomerController extends Controller
 
         return response()->stream($callback, 200, $headers);
     }
+
+    /**
+     * Update customer information inline (for project detail page)
+     */
+    public function updateInline(Request $request, Customer $customer)
+    {
+        // Authorization check
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        // Company isolation for non-super_admin
+        if (Auth::user()->role !== 'super_admin' && $customer->company_id !== Auth::user()->company_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:50',
+            'street' => 'nullable|string|max:255',
+            'addition' => 'nullable|string|max:50',
+            'zip_code' => 'nullable|string|max:20',
+            'city' => 'nullable|string|max:100',
+            'country' => 'nullable|string|max:100',
+        ]);
+
+        try {
+            $customer->update($validated);
+
+            // Log activity
+            CustomerActivity::create([
+                'customer_id' => $customer->id,
+                'user_id' => Auth::id(),
+                'action' => 'updated',
+                'type' => 'customer_updated',
+                'description' => 'Customer information updated (inline edit)',
+                'changes' => json_encode([
+                    'updated_fields' => array_keys($validated)
+                ])
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Customer information updated successfully',
+                'customer' => $customer->fresh()
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to update customer inline', [
+                'error' => $e->getMessage(),
+                'customer_id' => $customer->id
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update customer information'
+            ], 500);
+        }
+    }
 }

@@ -7,7 +7,6 @@ use App\Models\Customer;
 use App\Models\Company;
 use App\Models\User;
 use App\Models\ProjectTemplate;
-use App\Models\ProjectAiSetting;
 use App\Services\ProjectBudgetService;
 use Illuminate\Http\Request;
 use Illuminate\Http\RedirectResponse;
@@ -594,8 +593,10 @@ public function show(Project $project): View
     try {
         // Eager load alle benodigde relationships inclusief volledige hiërarchie
         $project->load([
-            'customer',
-            'companyRelation', 
+            'customer.contacts' => function($query) {
+                $query->where('is_active', true)->orderBy('is_primary', 'desc')->orderBy('name');
+            },
+            'companyRelation',
             'mainInvoicingCompany',
             'users',
             'companies',
@@ -726,9 +727,9 @@ public function show(Project $project): View
             // Plugin system removed - always true
             $isCompaniesPluginActive = true;
 
-            // Load current team members, companies, and AI settings with fresh data
+            // Load current team members, companies with fresh data
             $project->unsetRelation('users'); // Clear any cached users
-            $project->load(['users', 'companies', 'aiSettings', 'milestones.tasks']);
+            $project->load(['users', 'companies', 'milestones.tasks']);
             
             // Log current team members for debugging - use fresh query
             $currentTeamIds = \DB::table('project_users')
@@ -998,55 +999,6 @@ public function show(Project $project): View
                 Log::info('All companies removed');
             }
 
-            // Handle AI Settings
-            if ($request->has('use_custom_ai_settings')) {
-                // User wants custom AI settings
-                $aiSettings = ProjectAiSetting::firstOrNew(['project_id' => $project->id]);
-                
-                $aiSettings->use_global_settings = false;
-                $aiSettings->ai_naming_rules = $request->input('ai_naming_rules');
-                $aiSettings->ai_prompt_template = $request->input('ai_prompt_template');
-                
-                // Process categories (convert comma-separated to array)
-                $categories = $request->input('ai_task_categories');
-                if ($categories) {
-                    $aiSettings->ai_task_categories = array_map('trim', explode(',', $categories));
-                } else {
-                    $aiSettings->ai_task_categories = [];
-                }
-                
-                // Process keywords (convert comma-separated to array)
-                $keywords = $request->input('ai_keywords');
-                if ($keywords) {
-                    $aiSettings->ai_keywords = array_map('trim', explode(',', $keywords));
-                } else {
-                    $aiSettings->ai_keywords = [];
-                }
-                
-                // Process example patterns (already an array from form)
-                $examples = $request->input('ai_example_patterns', []);
-                $aiSettings->ai_example_patterns = array_filter($examples); // Remove empty values
-                
-                $aiSettings->is_active = true;
-                $aiSettings->save();
-                
-                Log::info('AI settings updated for project', ['project_id' => $project->id]);
-            } else {
-                // User wants to use global settings
-                $aiSettings = ProjectAiSetting::where('project_id', $project->id)->first();
-                if ($aiSettings) {
-                    $aiSettings->use_global_settings = true;
-                    $aiSettings->save();
-                } else {
-                    // Create new record with global settings
-                    ProjectAiSetting::create([
-                        'project_id' => $project->id,
-                        'use_global_settings' => true,
-                        'is_active' => true
-                    ]);
-                }
-            }
-
             DB::commit();
             Log::info('Update transaction committed');
 
@@ -1301,6 +1253,60 @@ public function show(Project $project): View
     /**
      * Add team member to project
      */
+    /**
+     * Get team data for modal
+     */
+    public function getTeamData(Project $project)
+    {
+        // Authorization check
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
+            return response()->json(['success' => false, 'message' => 'Access denied'], 403);
+        }
+
+        // Get current team members
+        $currentUsers = $project->users()->with('companyRelation')->get()->map(function($user) {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'role' => $user->role,
+                'company' => $user->companyRelation ? [
+                    'id' => $user->companyRelation->id,
+                    'name' => $user->companyRelation->name
+                ] : null
+            ];
+        });
+
+        // Get available users (not in project)
+        $currentUserIds = $currentUsers->pluck('id')->toArray();
+        $availableUsersQuery = User::whereNotIn('id', $currentUserIds)
+            ->whereNotNull('name')
+            ->with('companyRelation');
+
+        // Filter by company for non-super admins
+        if (Auth::user()->role !== 'super_admin') {
+            $availableUsersQuery->where('company_id', Auth::user()->company_id);
+        }
+
+        $availableUsers = $availableUsersQuery->orderBy('name')->get()->map(function($user) {
+            return [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'company' => $user->companyRelation ? [
+                    'id' => $user->companyRelation->id,
+                    'name' => $user->companyRelation->name
+                ] : null
+            ];
+        });
+
+        return response()->json([
+            'success' => true,
+            'current_users' => $currentUsers,
+            'available_users' => $availableUsers
+        ]);
+    }
+
     public function addTeamMember(Request $request, Project $project)
     {
         // Authorization check
@@ -2192,6 +2198,106 @@ public function show(Project $project): View
             return response()->json([
                 'success' => false,
                 'message' => 'Error updating task: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update basic project information (inline edit)
+     */
+    public function updateBasicInfo(Request $request, Project $project)
+    {
+        // Authorization check
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        // Company isolation for non-super_admin
+        if (Auth::user()->role !== 'super_admin' && $project->company_id !== Auth::user()->company_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'customer_id' => 'nullable|exists:customers,id',
+            'status' => 'required|in:draft,active,on_hold,completed,cancelled',
+            'start_date' => 'nullable|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
+            'description' => 'nullable|string',
+            'notes' => 'nullable|string',
+            // Financial fields
+            'monthly_fee' => 'nullable|numeric|min:0',
+            'default_hourly_rate' => 'nullable|numeric|min:0',
+            'vat_rate' => 'nullable|numeric|min:0|max:100',
+            'billing_frequency' => 'nullable|in:monthly,quarterly,milestone,project_completion,custom',
+            'billing_interval_days' => 'nullable|integer|min:1',
+            'fee_rollover_enabled' => 'nullable|boolean',
+            'fee_start_date' => 'nullable|date',
+        ]);
+
+        try {
+            $project->update($validated);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Project information updated successfully',
+                'project' => $project->fresh()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update project basic info', [
+                'error' => $e->getMessage(),
+                'project_id' => $project->id
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update project information'
+            ], 500);
+        }
+    }
+
+    /**
+     * Update financial project settings (inline edit)
+     */
+    public function updateFinancial(Request $request, Project $project)
+    {
+        // Authorization check
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        // Company isolation for non-super_admin
+        if (Auth::user()->role !== 'super_admin' && $project->company_id !== Auth::user()->company_id) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 403);
+        }
+
+        $validated = $request->validate([
+            'monthly_fee' => 'nullable|numeric|min:0',
+            'default_hourly_rate' => 'nullable|numeric|min:0',
+            'vat_rate' => 'nullable|numeric|min:0|max:100',
+            'billing_frequency' => 'nullable|in:monthly,quarterly,milestone,project_completion,custom',
+            'billing_interval_days' => 'nullable|integer|min:1',
+            'fee_rollover_enabled' => 'nullable|boolean',
+            'fee_start_date' => 'nullable|date',
+        ]);
+
+        try {
+            $project->update($validated);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Financial settings updated successfully',
+                'project' => $project->fresh()
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update project financial info', [
+                'error' => $e->getMessage(),
+                'project_id' => $project->id
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update financial settings'
             ], 500);
         }
     }

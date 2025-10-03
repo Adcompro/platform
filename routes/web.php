@@ -81,6 +81,7 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('customers', CustomerController::class);
     Route::post('customers/bulk-update', [CustomerController::class, 'bulkUpdate'])->name('customers.bulk-update');
     Route::get('customers/export', [CustomerController::class, 'export'])->name('customers.export');
+    Route::patch('customers/{customer}/update-inline', [CustomerController::class, 'updateInline'])->name('customers.update-inline');
 
     // =====================================
     // CONTACT MANAGEMENT
@@ -114,7 +115,14 @@ Route::middleware(['auth'])->group(function () {
         Route::get('statistics', [ProjectController::class, 'statistics'])->name('projects.statistics');
         Route::patch('status', [ProjectController::class, 'updateStatus'])->name('projects.status');
 
+        // Inline edit routes
+        Route::patch('update-basic-info', [ProjectController::class, 'updateBasicInfo'])->name('projects.update-basic-info');
+        Route::patch('update-financial', [ProjectController::class, 'updateFinancial'])->name('projects.update-financial');
+
         // Team member management
+        Route::get('team-data', [ProjectController::class, 'getTeamData'])->name('projects.team-data');
+        Route::post('add-team-member', [ProjectController::class, 'addTeamMember'])->name('projects.add-team-member');
+        Route::delete('remove-team-member', [ProjectController::class, 'removeTeamMember'])->name('projects.remove-team-member');
         Route::post('team/add', [ProjectController::class, 'addTeamMember'])->name('projects.team.add');
         Route::delete('team/remove', [ProjectController::class, 'removeTeamMember'])->name('projects.team.remove');
         Route::put('team/update', [ProjectController::class, 'updateTeamMember'])->name('projects.team.update');

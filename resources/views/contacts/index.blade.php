@@ -12,6 +12,16 @@
                 <p class="text-gray-600" style="font-size: var(--theme-view-header-description-size); margin-top: 0.25rem;">Manage customer contacts and relationships</p>
             </div>
             <div class="flex items-center gap-3">
+                @if(request('return_to_project'))
+                <a href="{{ route('projects.show', request('return_to_project')) }}"
+                   id="header-close-btn"
+                   class="header-btn"
+                   style="padding: calc(var(--theme-view-header-padding) * 0.5) var(--theme-view-header-padding); font-size: var(--theme-view-header-button-size); background-color: rgba(var(--theme-danger-rgb), 0.1); color: var(--theme-danger);">
+                    <i class="fas fa-times mr-1.5"></i>
+                    Close
+                </a>
+                @endif
+
                 @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
                 <a href="{{ route('contacts.create') }}"
                    id="header-create-btn"

@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Facades\Auth;
 use App\Traits\HasStatusManagement;
@@ -217,29 +216,6 @@ class Project extends Model
     public function intercompanyCharges(): HasMany
     {
         return $this->hasMany(MonthlyIntercompanyCharge::class);
-    }
-
-    /**
-     * AI settings voor dit project
-     */
-    public function aiSettings(): HasOne
-    {
-        return $this->hasOne(ProjectAiSetting::class);
-    }
-    
-    /**
-     * Get AI settings or create default
-     */
-    public function getAiSettings()
-    {
-        if (!$this->aiSettings) {
-            return new ProjectAiSetting([
-                'project_id' => $this->id,
-                'use_global_settings' => true
-            ]);
-        }
-        
-        return $this->aiSettings;
     }
 
     /**
