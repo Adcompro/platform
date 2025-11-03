@@ -1,0 +1,328 @@
+/* Ultra Modern Calendar Theme - Maximum Specificity Overrides */
+
+/* Base Calendar Reset with extreme specificity */
+body #calendar,
+body #calendar .fc,
+body #calendar.fc-premium-theme,
+body #calendar.fc-premium-theme .fc {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    background: transparent !important;
+    font-size: 12px !important;
+}
+
+/* Remove all borders globally */
+#calendar * {
+    border-color: rgba(226, 232, 240, 0.1) !important;
+}
+
+/* Toolbar Overhaul - Force minimal styling */
+body #calendar .fc-toolbar,
+body #calendar.fc-premium-theme .fc-toolbar,
+body #calendar .fc-header-toolbar {
+    padding: 0.25rem !important;
+    margin-bottom: 0.5rem !important;
+    background: transparent !important;
+    border: none !important;
+    gap: 0.25rem !important;
+    min-height: auto !important;
+    height: auto !important;
+}
+
+#calendar .fc-toolbar-title {
+    font-size: 0.75rem !important;
+    font-weight: 400 !important;
+    color: #64748b !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    margin: 0 1rem !important;
+}
+
+/* Ultra Minimal Buttons - Force override all states */
+body #calendar .fc-button-primary,
+body #calendar .fc-button,
+body #calendar button.fc-button,
+body #calendar button.fc-button-primary,
+body #calendar .fc-button:not(:disabled),
+body #calendar .fc-button-primary:not(:disabled) {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    border: 1px solid rgba(226, 232, 240, 0.15) !important;
+    color: #94a3b8 !important;
+    font-size: 9px !important;
+    font-weight: 400 !important;
+    padding: 2px 6px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    border-radius: 3px !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    transition: all 0.2s !important;
+    line-height: 1.2 !important;
+    min-height: auto !important;
+    height: auto !important;
+}
+
+#calendar .fc-button:hover {
+    background-color: rgba(241, 245, 249, 0.5) !important;
+    border-color: rgba(148, 163, 184, 0.3) !important;
+    color: #475569 !important;
+    box-shadow: none !important;
+}
+
+#calendar .fc-button-active,
+#calendar .fc-button:active {
+    background-color: rgba(71, 85, 105, 0.1) !important;
+    border-color: rgba(71, 85, 105, 0.3) !important;
+    color: #334155 !important;
+    box-shadow: none !important;
+}
+
+#calendar .fc-button:disabled {
+    opacity: 0.3 !important;
+}
+
+#calendar .fc-button:focus {
+    outline: none !important;
+    box-shadow: none !important;
+}
+
+/* Day Headers - Minimal */
+#calendar .fc-col-header {
+    background: transparent !important;
+    border: none !important;
+}
+
+#calendar .fc-col-header-cell {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.05) !important;
+    padding: 0.5rem 0 !important;
+    text-align: center !important;
+}
+
+#calendar .fc-col-header-cell-cushion {
+    font-size: 0.5625rem !important;
+    font-weight: 400 !important;
+    color: #94a3b8 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    text-decoration: none !important;
+}
+
+#calendar th {
+    font-weight: 400 !important;
+}
+
+/* Grid Cells - Ultra Clean */
+#calendar .fc-daygrid-day,
+#calendar .fc-timegrid-slot,
+#calendar .fc-timegrid-slot-lane,
+#calendar td, 
+#calendar th {
+    background: transparent !important;
+    border-width: 1px !important;
+    border-style: solid !important;
+    border-color: rgba(226, 232, 240, 0.05) !important;
+}
+
+#calendar .fc-daygrid-day:hover {
+    background: rgba(248, 250, 252, 0.3) !important;
+}
+
+/* Day Numbers - Subtle */
+#calendar .fc-daygrid-day-top {
+    padding: 0.25rem !important;
+}
+
+#calendar .fc-daygrid-day-number {
+    font-size: 0.625rem !important;
+    font-weight: 300 !important;
+    color: #94a3b8 !important;
+    padding: 0.125rem !important;
+    text-decoration: none !important;
+}
+
+#calendar .fc-day-today {
+    background: rgba(241, 245, 249, 0.1) !important;
+}
+
+#calendar .fc-day-today .fc-daygrid-day-number {
+    background: rgba(71, 85, 105, 0.1) !important;
+    color: #334155 !important;
+    border-radius: 0.25rem !important;
+    padding: 0.125rem 0.375rem !important;
+    font-weight: 500 !important;
+}
+
+/* Time Grid - Minimal */
+#calendar .fc-timegrid-axis {
+    width: 2.5rem !important;
+}
+
+#calendar .fc-timegrid-slot-label {
+    font-size: 0.5625rem !important;
+    color: #cbd5e1 !important;
+    font-weight: 300 !important;
+    vertical-align: middle !important;
+}
+
+#calendar .fc-timegrid-slot {
+    height: 2.5rem !important;
+}
+
+#calendar .fc-timegrid-slot-minor {
+    border-top-style: dotted !important;
+    border-top-color: rgba(226, 232, 240, 0.03) !important;
+}
+
+/* Events - Modern Glass Style */
+#calendar .fc-event,
+#calendar .fc-timegrid-event,
+#calendar .fc-daygrid-event {
+    background: rgba(59, 130, 246, 0.1) !important;
+    border: none !important;
+    border-left: 2px solid #3b82f6 !important;
+    border-radius: 0.25rem !important;
+    color: #1e40af !important;
+    font-size: 0.625rem !important;
+    padding: 0.125rem 0.25rem !important;
+    margin: 1px !important;
+    overflow: hidden !important;
+    cursor: pointer !important;
+    transition: all 0.2s !important;
+}
+
+#calendar .fc-event:hover {
+    background: rgba(59, 130, 246, 0.15) !important;
+    transform: translateX(1px) !important;
+}
+
+#calendar .fc-event-main {
+    color: #1e40af !important;
+}
+
+#calendar .fc-event-title,
+#calendar .fc-event-title-container {
+    font-weight: 400 !important;
+    font-size: 0.625rem !important;
+    padding: 0 !important;
+}
+
+#calendar .fc-event-time {
+    font-size: 0.5rem !important;
+    opacity: 0.7 !important;
+    font-weight: 400 !important;
+}
+
+#calendar .fc-event.converted {
+    background: rgba(16, 185, 129, 0.1) !important;
+    border-left-color: #10b981 !important;
+    color: #065f46 !important;
+}
+
+#calendar .fc-event.converted .fc-event-main {
+    color: #065f46 !important;
+}
+
+/* Hide event dots */
+#calendar .fc-daygrid-event-dot {
+    display: none !important;
+}
+
+/* Week Numbers */
+#calendar .fc-daygrid-week-number {
+    background: transparent !important;
+    color: #cbd5e1 !important;
+    font-size: 0.5rem !important;
+    font-weight: 300 !important;
+    opacity: 0.5 !important;
+}
+
+/* Now Indicator */
+#calendar .fc-timegrid-now-indicator-line {
+    border-color: #ef4444 !important;
+    border-width: 1px !important;
+    opacity: 0.5 !important;
+}
+
+#calendar .fc-timegrid-now-indicator-arrow {
+    display: none !important;
+}
+
+/* More Link */
+#calendar .fc-more-link,
+#calendar .fc-daygrid-more-link {
+    color: #64748b !important;
+    font-size: 0.5625rem !important;
+    font-weight: 400 !important;
+}
+
+/* Scrollbar */
+#calendar .fc-scroller {
+    overflow-y: auto !important;
+}
+
+#calendar .fc-scroller::-webkit-scrollbar {
+    width: 3px !important;
+    height: 3px !important;
+}
+
+#calendar .fc-scroller::-webkit-scrollbar-track {
+    background: transparent !important;
+}
+
+#calendar .fc-scroller::-webkit-scrollbar-thumb {
+    background: rgba(203, 213, 225, 0.3) !important;
+    border-radius: 1.5px !important;
+}
+
+#calendar .fc-scroller::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.5) !important;
+}
+
+/* Popover */
+#calendar .fc-popover {
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(20px) !important;
+    border: 1px solid rgba(226, 232, 240, 0.2) !important;
+    border-radius: 0.5rem !important;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05) !important;
+}
+
+#calendar .fc-popover-header {
+    background: transparent !important;
+    padding: 0.5rem !important;
+    border-bottom: 1px solid rgba(226, 232, 240, 0.1) !important;
+}
+
+#calendar .fc-popover-title {
+    font-size: 0.625rem !important;
+    font-weight: 500 !important;
+    color: #64748b !important;
+}
+
+/* Remove all thick borders */
+#calendar .fc-scrollgrid,
+#calendar .fc-scrollgrid-section,
+#calendar .fc-scrollgrid-sync-table,
+#calendar tbody,
+#calendar thead,
+#calendar tr {
+    border: none !important;
+}
+
+/* Non-business hours */
+#calendar .fc-non-business {
+    background: rgba(241, 245, 249, 0.02) !important;
+}
+
+/* Selected state */
+#calendar .fc-highlight {
+    background: rgba(59, 130, 246, 0.05) !important;
+}
+
+/* License message hide */
+#calendar .fc-license-message {
+    display: none !important;
+}
