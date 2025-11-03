@@ -101,12 +101,39 @@ DB_PASSWORD=your_password
 
 ### 4. Database Migration
 
-```bash
-# Run migrations
-php artisan migrate --seed
+⚠️ **IMPORTANT**: This project contains 150+ migrations from active development. For a clean installation, we recommend using a fresh database.
 
-# Optional: Load sample data
-php artisan db:seed --class=SampleDataSeeder
+```bash
+# Create fresh database
+mysql -u root -p -e "CREATE DATABASE your_database_name CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
+# Run all migrations (this will take a few minutes)
+php artisan migrate
+
+# Optional: Create first admin user
+php artisan tinker
+```
+
+In Tinker console:
+```php
+$user = new \App\Models\User();
+$user->name = 'Admin User';
+$user->email = 'admin@example.com';
+$user->password = bcrypt('your-secure-password');
+$user->role = 'super_admin';
+$user->is_active = true;
+$user->email_verified_at = now();
+$user->save();
+
+$company = new \App\Models\Company();
+$company->name = 'Your Company';
+$company->email = 'info@example.com';
+$company->is_active = true;
+$company->save();
+
+$user->company_id = $company->id;
+$user->save();
+exit
 ```
 
 ### 5. Storage Setup
