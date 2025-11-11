@@ -11,7 +11,6 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\InvoiceController;
 use App\Http\Controllers\InvoiceTemplateController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\AiLearningController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\UserController;
@@ -26,7 +25,6 @@ use App\Http\Controllers\ContactController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\MsGraphAuthController;
 use App\Http\Controllers\AIChatController;
-use App\Http\Controllers\AIDigestController;
 use App\Http\Controllers\ProjectMediaCampaignController;
 use App\Http\Controllers\TeamleaderController;
 
@@ -261,10 +259,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('time-entries/{timeEntry}/reject', [TimeEntryController::class, 'reject'])->name('time-entries.reject');
 
     // AI TIME ENTRY ROUTES (before resource route!)
-    Route::get('ai-learning', [AiLearningController::class, 'index'])->name('ai-learning.index');
-    Route::post('ai-learning/feedback/{timeEntry}', [AiLearningController::class, 'updateFeedback'])->name('ai-learning.feedback');
-    Route::post('ai-learning/bulk-review', [AiLearningController::class, 'bulkReview'])->name('ai-learning.bulk-review');
-    Route::post('ai-learning/apply/{project}', [AiLearningController::class, 'applyLearning'])->name('ai-learning.apply');
 
     // TIME ENTRIES RESOURCE ROUTES (last, so specific routes match first!)
     Route::resource('time-entries', TimeEntryController::class);
@@ -430,14 +424,6 @@ Route::middleware(['auth'])->group(function () {
     // =====================================
     // AI WEEKLY DIGEST
     // =====================================
-    Route::prefix('ai-digest')->group(function () {
-        Route::get('/', [AIDigestController::class, 'index'])->name('ai-digest.index');
-        Route::put('/settings', [AIDigestController::class, 'updateSettings'])->name('ai-digest.settings');
-        Route::post('/generate', [AIDigestController::class, 'generate'])->name('ai-digest.generate');
-        Route::get('/preview', [AIDigestController::class, 'preview'])->name('ai-digest.preview');
-        Route::get('/download', [AIDigestController::class, 'download'])->name('ai-digest.download');
-    });
-
     // =====================================
     // SETTINGS
     // =====================================
