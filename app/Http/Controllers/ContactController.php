@@ -132,8 +132,11 @@ class ContactController extends Controller
         if ($request->has('customer_id')) {
             $selectedCustomer = Customer::find($request->customer_id);
             // Controleer of user toegang heeft tot deze customer
-            if ($selectedCustomer && Auth::user()->role !== 'super_admin' && $selectedCustomer->company_id !== Auth::user()->company_id) {
-                abort(403, 'Access denied.');
+            // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
+            if ($selectedCustomer && Auth::user()->role !== 'super_admin') {
+                if ($selectedCustomer->company_id !== null && $selectedCustomer->company_id !== Auth::user()->company_id) {
+                    abort(403, 'Access denied. You can only manage contacts for customers in your company.');
+                }
             }
         }
 
@@ -166,9 +169,12 @@ class ContactController extends Controller
         ]);
 
         // Controleer of user toegang heeft tot de customer
+        // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
         $customer = Customer::find($request->customer_id);
-        if (Auth::user()->role !== 'super_admin' && $customer->company_id !== Auth::user()->company_id) {
-            abort(403, 'Access denied. You can only add contacts to customers from your own company.');
+        if (Auth::user()->role !== 'super_admin') {
+            if ($customer->company_id !== null && $customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied. You can only add contacts to customers from your own company.');
+            }
         }
 
         try {
@@ -305,8 +311,11 @@ class ContactController extends Controller
         }
 
         // Company isolation check
-        if (Auth::user()->role !== 'super_admin' && $contact->customer->company_id !== Auth::user()->company_id) {
-            abort(403, 'Access denied. You can only edit contacts from your own company customers.');
+        // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
+        if (Auth::user()->role !== 'super_admin') {
+            if ($contact->customer->company_id !== null && $contact->customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied. You can only edit contacts from your own company customers.');
+            }
         }
 
         // Get customers voor dropdown
@@ -333,8 +342,11 @@ class ContactController extends Controller
         }
 
         // Company isolation check
-        if (Auth::user()->role !== 'super_admin' && $contact->customer->company_id !== Auth::user()->company_id) {
-            abort(403, 'Access denied. You can only update contacts from your own company customers.');
+        // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
+        if (Auth::user()->role !== 'super_admin') {
+            if ($contact->customer->company_id !== null && $contact->customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied. You can only update contacts from your own company customers.');
+            }
         }
 
         // Validation
@@ -524,8 +536,11 @@ class ContactController extends Controller
         }
 
         // Company isolation check
-        if (Auth::user()->role !== 'super_admin' && $contact->customer->company_id !== Auth::user()->company_id) {
-            abort(403, 'Access denied. You can only delete contacts from your own company customers.');
+        // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
+        if (Auth::user()->role !== 'super_admin') {
+            if ($contact->customer->company_id !== null && $contact->customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied. You can only delete contacts from your own company customers.');
+            }
         }
 
         try {
@@ -569,8 +584,11 @@ class ContactController extends Controller
         }
 
         // Company isolation check
-        if (Auth::user()->role !== 'super_admin' && $contact->customer->company_id !== Auth::user()->company_id) {
-            abort(403, 'Access denied.');
+        // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
+        if (Auth::user()->role !== 'super_admin') {
+            if ($contact->customer->company_id !== null && $contact->customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied.');
+            }
         }
 
         $contact->makePrimary();

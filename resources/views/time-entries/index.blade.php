@@ -98,7 +98,7 @@
                             <option value="">All Projects</option>
                             @foreach($projects as $project)
                                 <option value="{{ $project->id }}" {{ request('project_id') == $project->id ? 'selected' : '' }}>
-                                    {{ $project->name }}
+                                    {{ $project->name }}@if($project->customer) ({{ $project->customer->name }})@endif
                                 </option>
                             @endforeach
                         </select>
@@ -370,17 +370,46 @@
                                                 </div>
                                             @endif
 
-                                            {{-- Defer details --}}
+                                            {{-- Defer details - Currently deferred (will be invoiced later) --}}
                                             @if($entry->was_deferred && $entry->deferred_at)
                                                 <div style="font-size: calc(var(--theme-font-size) - 4px); color: var(--theme-text-muted); margin-top: 0.25rem;">
                                                     Deferred on {{ $entry->deferred_at->format('M j, Y') }}
                                                     @if($entry->deferredBy)
                                                         by {{ $entry->deferredBy->name }}
                                                     @endif
+                                                    @if($entry->invoice && $entry->invoice->period_start && $entry->invoice->period_end)
+                                                        <br><strong style="color: #f97316;">→ Moved to: {{ \Carbon\Carbon::parse($entry->invoice->period_start)->format('M Y') }}</strong>
+                                                        @if($entry->invoice->invoice_number)
+                                                            (Invoice #{{ $entry->invoice->invoice_number }})
+                                                        @endif
+                                                    @endif
                                                     @if($entry->defer_reason)
                                                         <br>{{ $entry->defer_reason }}
                                                     @endif
                                                 </div>
+                                            @endif
+
+                                            {{-- Previously deferred (was moved FROM an earlier month) --}}
+                                            @if($entry->was_previously_deferred && $entry->invoice && $entry->invoice->period_start)
+                                                @php
+                                                    $entryMonth = \Carbon\Carbon::parse($entry->entry_date ?? $entry->date);
+                                                    $invoiceMonth = \Carbon\Carbon::parse($entry->invoice->period_start);
+                                                    // Only show if months are different
+                                                    if ($entryMonth->format('Y-m') !== $invoiceMonth->format('Y-m')) {
+                                                        $showPreviouslyDeferred = true;
+                                                    } else {
+                                                        $showPreviouslyDeferred = false;
+                                                    }
+                                                @endphp
+                                                @if($showPreviouslyDeferred)
+                                                    <div style="font-size: calc(var(--theme-font-size) - 4px); color: var(--theme-text-muted); margin-top: 0.25rem; padding: 0.25rem 0.5rem; background-color: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 4px;">
+                                                        <strong style="color: #3b82f6;">⚠️ NOT invoiced in {{ $entryMonth->format('M Y') }}</strong>
+                                                        <br>Moved to {{ $invoiceMonth->format('M Y') }}
+                                                        @if($entry->invoice->invoice_number)
+                                                            (Invoice #{{ $entry->invoice->invoice_number }})
+                                                        @endif
+                                                    </div>
+                                                @endif
                                             @endif
                                         </div>
                                     </td>
@@ -598,10 +627,10 @@
                         {{-- Project Selection --}}
                         <div class="md:col-span-2">
                             <label for="modal_project_id" class="block text-sm font-medium text-slate-700 mb-1">Project</label>
-                            <select name="project_id" id="modal_project_id" required onchange="loadProjectWorkItems()" class="w-full px-3 py-2 border border-slate-200/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 bg-white/80 text-slate-900">
+                            <select name="project_id" id="modal_project_id" required onchange="loadProjectWorkItems(); filterBackgroundTableByProject();" class="w-full px-3 py-2 border border-slate-200/60 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-500 focus:border-slate-500 bg-white/80 text-slate-900">
                                 <option value="">Select Project</option>
                                 @foreach($projects as $project)
-                                    <option value="{{ $project->id }}">{{ $project->name }}</option>
+                                    <option value="{{ $project->id }}">{{ $project->name }}@if($project->customer) ({{ $project->customer->name }})@endif</option>
                                 @endforeach
                             </select>
                         </div>
@@ -698,6 +727,68 @@ function closeTimeEntryModal() {
     const modal = document.getElementById('timeEntryModal');
     if (modal) {
         modal.style.display = 'none';
+    }
+
+    // Reset background table filter when closing modal
+    resetBackgroundTableFilter();
+}
+
+/**
+ * Filter background table by selected project in modal
+ * Sets the background filter dropdown and submits the form to load ALL entries for that project
+ */
+function filterBackgroundTableByProject() {
+    const projectId = document.getElementById('modal_project_id').value;
+    const backgroundFilterDropdown = document.getElementById('filter_project_id');
+
+    if (!backgroundFilterDropdown) {
+        console.log('Background filter dropdown not found');
+        return;
+    }
+
+    // Set the background filter to the selected project
+    backgroundFilterDropdown.value = projectId;
+
+    // Trigger the auto-submit to reload with the project filter
+    if (projectId) {
+        console.log('Setting background filter to project:', projectId);
+
+        // Add hidden inputs to preserve modal state after form submit
+        const form = backgroundFilterDropdown.form;
+
+        // Remove any existing modal inputs first
+        const existingModalInput = form.querySelector('input[name="modal"]');
+        const existingProjectInput = form.querySelector('input[name="modal_project"]');
+        if (existingModalInput) existingModalInput.remove();
+        if (existingProjectInput) existingProjectInput.remove();
+
+        // Create new hidden inputs
+        const modalInput = document.createElement('input');
+        modalInput.type = 'hidden';
+        modalInput.name = 'modal';
+        modalInput.value = 'open';
+        form.appendChild(modalInput);
+
+        const modalProjectInput = document.createElement('input');
+        modalProjectInput.type = 'hidden';
+        modalProjectInput.name = 'modal_project';
+        modalProjectInput.value = projectId;
+        form.appendChild(modalProjectInput);
+
+        // Submit the form
+        form.submit();
+    }
+}
+
+/**
+ * Reset background table filter (show all rows)
+ */
+function resetBackgroundTableFilter() {
+    const backgroundFilterDropdown = document.getElementById('filter_project_id');
+    if (backgroundFilterDropdown && backgroundFilterDropdown.value !== '') {
+        // Reset filter to "All Projects"
+        backgroundFilterDropdown.value = '';
+        backgroundFilterDropdown.form.submit();
     }
 }
 
@@ -842,8 +933,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const selectFilters = document.querySelectorAll('#filter_project_id, #filter_user_id, #filter_status');
     selectFilters.forEach(select => {
         select.addEventListener('change', function() {
-            // Optional: Auto-submit on filter change
-            // this.form.submit();
+            // Auto-submit on filter change
+            this.form.submit();
         });
     });
 
@@ -851,10 +942,37 @@ document.addEventListener('DOMContentLoaded', function() {
     const dateFilters = document.querySelectorAll('#filter_date_from, #filter_date_to');
     dateFilters.forEach(input => {
         input.addEventListener('change', function() {
-            // Optional: Auto-submit on date change
-            // this.form.submit();
+            // Auto-submit on date change
+            this.form.submit();
         });
     });
+
+    // Check if modal should be reopened after page reload
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('modal') === 'open') {
+        const modalProjectId = urlParams.get('modal_project');
+
+        // Open the modal
+        openTimeEntryModal();
+
+        // Set the project if provided
+        if (modalProjectId) {
+            setTimeout(() => {
+                const modalProjectSelect = document.getElementById('modal_project_id');
+                if (modalProjectSelect) {
+                    modalProjectSelect.value = modalProjectId;
+                    // Trigger the work items load
+                    loadProjectWorkItems();
+                }
+            }, 100);
+        }
+
+        // Clean up URL (remove modal parameters)
+        const cleanUrl = new URL(window.location);
+        cleanUrl.searchParams.delete('modal');
+        cleanUrl.searchParams.delete('modal_project');
+        window.history.replaceState({}, '', cleanUrl);
+    }
 });
 
 /**

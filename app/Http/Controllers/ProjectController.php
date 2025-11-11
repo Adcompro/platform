@@ -810,6 +810,11 @@ public function show(Project $project): View
                     ->with(['tasks' => function($taskQuery) {
                         $taskQuery->orderBy('sort_order');
                     }]);
+            },
+            'additionalCosts' => function($query) {
+                $query->orderBy('cost_type', 'desc') // recurring eerst
+                      ->orderBy('is_active', 'desc')
+                      ->orderBy('name');
             }
         ]);
 
@@ -861,6 +866,21 @@ public function show(Project $project): View
             'progress_percentage' => 0,
         ];
 
+        // Bereken additional costs statistieken
+        $inBudgetCosts = $project->additionalCosts->where('fee_type', 'in_fee');
+        $additionalCosts = $project->additionalCosts->where('fee_type', 'additional');
+
+        $inBudgetTotal = $inBudgetCosts->sum(function($cost) {
+            return $cost->calculateAmount();
+        });
+
+        $additionalTotal = $additionalCosts->sum(function($cost) {
+            return $cost->calculateAmount();
+        });
+
+        $recurringCostsCount = $project->additionalCosts->where('cost_type', 'monthly_recurring')->count();
+        $oneTimeCostsCount = $project->additionalCosts->where('cost_type', 'one_time')->count();
+
         Log::info('Project statistics calculated', $stats);
         Log::info('ProjectController@show completed successfully');
 
@@ -878,7 +898,11 @@ public function show(Project $project): View
             'users',
             'companies',
             'templates',
-            'activities'
+            'activities',
+            'inBudgetTotal',
+            'additionalTotal',
+            'recurringCostsCount',
+            'oneTimeCostsCount'
         ));
 
     } catch (\Exception $e) {
@@ -944,7 +968,7 @@ public function show(Project $project): View
 
             // Load current team members, companies with fresh data
             $project->unsetRelation('users'); // Clear any cached users
-            $project->load(['users', 'companies', 'milestones.tasks']);
+            $project->load(['users', 'companies', 'milestones.tasks', 'additionalCosts']);
             
             // Log current team members for debugging - use fresh query
             $currentTeamIds = \DB::table('project_users')
@@ -1605,8 +1629,8 @@ public function show(Project $project): View
                 ], 400);
             }
 
-            // Add user to project
-            $project->users()->attach($validated['user_id'], [
+            // Permissions data voor attach
+            $permissions = [
                 'role_override' => $validated['role_override'] ?? null,
                 'can_edit_fee' => $validated['can_edit_fee'] ?? false,
                 'can_view_financials' => $validated['can_view_financials'] ?? false,
@@ -1614,17 +1638,40 @@ public function show(Project $project): View
                 'can_approve_time' => $validated['can_approve_time'] ?? false,
                 'added_by' => Auth::id(),
                 'added_at' => now(),
-            ]);
+            ];
 
-            Log::info('Team member added to project', [
+            // Add user to current project
+            $project->users()->attach($validated['user_id'], $permissions);
+
+            // Als dit project deel uitmaakt van een recurring series,
+            // voeg dan de user toe aan alle andere projecten in dezelfde serie
+            $syncedCount = 1; // Start met 1 (huidige project)
+            if ($project->recurring_series_id) {
+                $seriesProjects = Project::where('recurring_series_id', $project->recurring_series_id)
+                    ->where('id', '!=', $project->id)
+                    ->get();
+
+                foreach ($seriesProjects as $seriesProject) {
+                    // Check if user is not already in this series project
+                    if (!$seriesProject->users()->where('user_id', $validated['user_id'])->exists()) {
+                        $seriesProject->users()->attach($validated['user_id'], $permissions);
+                        $syncedCount++;
+                    }
+                }
+            }
+
+            Log::info('Team member added to project(s)', [
                 'project_id' => $project->id,
                 'user_id' => $validated['user_id'],
-                'added_by' => Auth::id()
+                'added_by' => Auth::id(),
+                'recurring_series_id' => $project->recurring_series_id,
+                'projects_synced' => $syncedCount
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Team member added successfully'
+                'message' => 'Team member added successfully' .
+                    ($project->recurring_series_id && $syncedCount > 1 ? " (applied to {$syncedCount} projects in series)" : '')
             ]);
 
         } catch (\Exception $e) {
@@ -1659,18 +1706,38 @@ public function show(Project $project): View
                 ], 400);
             }
 
-            // Remove user from project
+            // Remove user from current project
             $project->users()->detach($validated['user_id']);
 
-            Log::info('Team member removed from project', [
+            // Als dit project deel uitmaakt van een recurring series,
+            // verwijder dan de user ook van alle andere projecten in dezelfde serie
+            $syncedCount = 1; // Start met 1 (huidige project)
+            if ($project->recurring_series_id) {
+                $seriesProjects = Project::where('recurring_series_id', $project->recurring_series_id)
+                    ->where('id', '!=', $project->id)
+                    ->get();
+
+                foreach ($seriesProjects as $seriesProject) {
+                    // Check if user is in this series project
+                    if ($seriesProject->users()->where('user_id', $validated['user_id'])->exists()) {
+                        $seriesProject->users()->detach($validated['user_id']);
+                        $syncedCount++;
+                    }
+                }
+            }
+
+            Log::info('Team member removed from project(s)', [
                 'project_id' => $project->id,
                 'user_id' => $validated['user_id'],
-                'removed_by' => Auth::id()
+                'removed_by' => Auth::id(),
+                'recurring_series_id' => $project->recurring_series_id,
+                'projects_synced' => $syncedCount
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Team member removed successfully'
+                'message' => 'Team member removed successfully' .
+                    ($project->recurring_series_id && $syncedCount > 1 ? " (applied to {$syncedCount} projects in series)" : '')
             ]);
 
         } catch (\Exception $e) {
@@ -1702,18 +1769,47 @@ public function show(Project $project): View
         ]);
 
         try {
-            // Update user permissions
-            $project->users()->updateExistingPivot($validated['user_id'], [
+            // Permissions data voor update
+            $permissions = [
                 'role_override' => $validated['role_override'] ?? null,
                 'can_edit_fee' => $validated['can_edit_fee'] ?? false,
                 'can_view_financials' => $validated['can_view_financials'] ?? false,
                 'can_log_time' => $validated['can_log_time'] ?? true,
                 'can_approve_time' => $validated['can_approve_time'] ?? false,
+            ];
+
+            // Update user permissions in current project
+            $project->users()->updateExistingPivot($validated['user_id'], $permissions);
+
+            // Als dit project deel uitmaakt van een recurring series,
+            // update dan de permissions ook voor alle andere projecten in dezelfde serie
+            $syncedCount = 1; // Start met 1 (huidige project)
+            if ($project->recurring_series_id) {
+                $seriesProjects = Project::where('recurring_series_id', $project->recurring_series_id)
+                    ->where('id', '!=', $project->id)
+                    ->get();
+
+                foreach ($seriesProjects as $seriesProject) {
+                    // Check if user is in this series project
+                    if ($seriesProject->users()->where('user_id', $validated['user_id'])->exists()) {
+                        $seriesProject->users()->updateExistingPivot($validated['user_id'], $permissions);
+                        $syncedCount++;
+                    }
+                }
+            }
+
+            Log::info('Team member permissions updated in project(s)', [
+                'project_id' => $project->id,
+                'user_id' => $validated['user_id'],
+                'updated_by' => Auth::id(),
+                'recurring_series_id' => $project->recurring_series_id,
+                'projects_synced' => $syncedCount
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Team member permissions updated successfully'
+                'message' => 'Team member permissions updated successfully' .
+                    ($project->recurring_series_id && $syncedCount > 1 ? " (applied to {$syncedCount} projects in series)" : '')
             ]);
 
         } catch (\Exception $e) {
@@ -2506,14 +2602,113 @@ public function show(Project $project): View
             'billing_interval_days' => 'nullable|integer|min:1',
             'fee_rollover_enabled' => 'nullable|boolean',
             'fee_start_date' => 'nullable|date',
+            // Companies
+            'company_ids' => 'nullable|array',
+            'company_ids.*' => 'exists:companies,id',
+            // Project Managers
+            'project_manager_ids' => 'nullable|array',
+            'project_manager_ids.*' => 'exists:users,id',
         ]);
 
         try {
             $project->update($validated);
 
+            // Sync companies if provided
+            if ($request->has('company_ids')) {
+                $companyIds = $request->company_ids ?? [];
+
+                // Sync companies voor het huidige project
+                $project->companies()->sync($companyIds);
+
+                // Als dit project deel uitmaakt van een recurring series,
+                // sync dan ook de companies voor alle andere projecten in dezelfde serie
+                if ($project->recurring_series_id) {
+                    $seriesProjects = Project::where('recurring_series_id', $project->recurring_series_id)
+                        ->where('id', '!=', $project->id) // Exclude current project (already synced)
+                        ->get();
+
+                    $syncedCount = 0;
+                    foreach ($seriesProjects as $seriesProject) {
+                        $seriesProject->companies()->sync($companyIds);
+                        $syncedCount++;
+                    }
+
+                    Log::info('Synced companies across recurring series', [
+                        'recurring_series_id' => $project->recurring_series_id,
+                        'company_ids' => $companyIds,
+                        'projects_synced' => $syncedCount + 1, // +1 voor het huidige project
+                    ]);
+                }
+            }
+
+            // Sync project managers if provided
+            if ($request->has('project_manager_ids')) {
+                $managerIds = $request->project_manager_ids ?? [];
+
+                // Get current project managers (users with role_override='project_manager')
+                $currentManagers = $project->users()
+                    ->wherePivot('role_override', 'project_manager')
+                    ->pluck('users.id')
+                    ->toArray();
+
+                // Users to add as project managers (not currently managers)
+                $toAdd = array_diff($managerIds, $currentManagers);
+
+                // Users to remove from project managers (currently managers but not selected)
+                $toRemove = array_diff($currentManagers, $managerIds);
+
+                // Add new project managers
+                foreach ($toAdd as $userId) {
+                    // Check if user is already in project_users
+                    $existingPivot = DB::table('project_users')
+                        ->where('project_id', $project->id)
+                        ->where('user_id', $userId)
+                        ->first();
+
+                    if ($existingPivot) {
+                        // Update role_override to project_manager
+                        DB::table('project_users')
+                            ->where('project_id', $project->id)
+                            ->where('user_id', $userId)
+                            ->update(['role_override' => 'project_manager']);
+                    } else {
+                        // Add user with role_override=project_manager
+                        DB::table('project_users')->insert([
+                            'project_id' => $project->id,
+                            'user_id' => $userId,
+                            'role_override' => 'project_manager',
+                            'can_edit_fee' => true,
+                            'can_view_financials' => true,
+                            'can_log_time' => true,
+                            'can_approve_time' => true,
+                            'added_by' => Auth::id(),
+                            'added_at' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+
+                // Remove project manager role from unselected users
+                foreach ($toRemove as $userId) {
+                    DB::table('project_users')
+                        ->where('project_id', $project->id)
+                        ->where('user_id', $userId)
+                        ->update(['role_override' => null]);
+                }
+
+                Log::info('Synced project managers', [
+                    'project_id' => $project->id,
+                    'manager_ids' => $managerIds,
+                    'added' => count($toAdd),
+                    'removed' => count($toRemove),
+                ]);
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => 'Project information updated successfully',
+                'message' => 'Project information updated successfully' .
+                    ($project->recurring_series_id ? ' (applied to all projects in series)' : ''),
                 'project' => $project->fresh()
             ]);
         } catch (\Exception $e) {
@@ -3116,19 +3311,51 @@ public function show(Project $project): View
             abort(403, 'Access denied.');
         }
 
-        // Haal time entries op voor dit project
+        // Haal time entries op voor dit project met invoice line relatie voor defer status
         $timeEntries = $project->timeEntries()
-            ->with(['user', 'milestone', 'task', 'subtask'])
+            ->with(['user', 'milestone', 'task', 'subtask', 'invoice', 'invoiceLine'])
             ->orderBy('entry_date', 'desc')
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // Bereken totalen
-        $totalHours = $timeEntries->sum('hours');
-        $totalMinutes = $timeEntries->sum('minutes');
+        // Als dit project deel uitmaakt van een recurring series, haal dan ook deferred entries op van vorige maand
+        $deferredFromPrevious = collect([]);
+        if ($project->recurring_series_id && $project->start_date) {
+            // Zoek het vorige project in dezelfde recurring series (op basis van start_date)
+            $previousProject = Project::where('recurring_series_id', $project->recurring_series_id)
+                ->where('start_date', '<', $project->start_date)
+                ->orderBy('start_date', 'desc')
+                ->first();
+
+            if ($previousProject) {
+                // Haal time entries op die in het vorige project zijn uitgesteld naar deze maand
+                $deferredFromPrevious = \App\Models\TimeEntry::where('project_id', $previousProject->id)
+                    ->with(['user', 'milestone', 'task', 'subtask', 'invoice', 'invoiceLine'])
+                    ->whereHas('invoiceLine', function($query) {
+                        $query->where('defer_to_next_month', true);
+                    })
+                    ->orderBy('entry_date', 'desc')
+                    ->get();
+
+                Log::info('Deferred entries from previous month', [
+                    'current_project' => $project->id,
+                    'current_project_name' => $project->name,
+                    'previous_project' => $previousProject->id,
+                    'previous_project_name' => $previousProject->name,
+                    'deferred_count' => $deferredFromPrevious->count()
+                ]);
+            }
+        }
+
+        // Merge entries (eerst deferred, dan normale entries)
+        $allEntries = $deferredFromPrevious->merge($timeEntries);
+
+        // Bereken totalen (gebruik allEntries voor complete totaal)
+        $totalHours = $allEntries->sum('hours');
+        $totalMinutes = $allEntries->sum('minutes');
         $totalDuration = $totalHours + ($totalMinutes / 60);
 
-        // Bereken uren per user (gesorteerd op meeste uren eerst)
+        // Bereken uren per user ALLEEN voor entries gelogd in deze maand (niet deferred entries)
         $userStats = $timeEntries->groupBy('user_id')->map(function($entries, $userId) {
             $userHours = $entries->sum('hours');
             $userMinutes = $entries->sum('minutes');
@@ -3149,13 +3376,22 @@ public function show(Project $project): View
 
         return response()->json([
             'success' => true,
-            'entries' => $timeEntries->map(function($entry) {
+            'entries' => $allEntries->map(function($entry) use ($deferredFromPrevious, $project) {
                 // Convert decimale hours naar uren:minuten formaat
                 // Hours kan decimaal zijn (bijv. 0.50 = 30 min, 1.50 = 1u 30min, 0.33 = 20 min)
                 // BELANGRIJK: Round naar hele minuten om 19.8 → 20 te maken
                 $totalMinutes = round(($entry->hours * 60) + $entry->minutes);
                 $displayHours = floor($totalMinutes / 60);
                 $displayMinutes = $totalMinutes % 60;
+
+                // Check defer status vanuit invoice_line
+                $isDeferred = $entry->invoiceLine && $entry->invoiceLine->defer_to_next_month;
+
+                // Check of deze entry uit de vorige maand komt (deferred import)
+                $isFromPreviousMonth = $deferredFromPrevious->contains('id', $entry->id);
+
+                // Als entry uit vorige maand komt, forceer was_previously_deferred op true
+                $wasPreviouslyDeferred = $isFromPreviousMonth ? true : $entry->was_previously_deferred;
 
                 return [
                     'id' => $entry->id,
@@ -3170,10 +3406,22 @@ public function show(Project $project): View
                     'subtask' => $entry->subtask->name ?? '-',
                     'is_billable' => $entry->is_billable === 'billable',
                     'status' => $entry->status,
+                    // Defer information - gebruik invoice_line als primaire bron
+                    'was_deferred' => $isDeferred || $entry->was_deferred,
+                    'was_previously_deferred' => $wasPreviouslyDeferred,
+                    'deferred_at' => $entry->deferred_at ? $entry->deferred_at->format('M j, Y') : null,
+                    'defer_reason' => $entry->defer_reason,
+                    'invoice_period_start' => $entry->invoice && $entry->invoice->period_start ?
+                        \Carbon\Carbon::parse($entry->invoice->period_start)->format('M Y') : null,
+                    'invoice_number' => $entry->invoice ? $entry->invoice->invoice_number : null,
+                    'entry_month' => $entry->entry_date->format('M Y'),
+                    'from_previous_month' => $isFromPreviousMonth, // Extra info voor frontend
                 ];
             }),
             'stats' => [
-                'total_entries' => $timeEntries->count(),
+                'total_entries' => $allEntries->count(),
+                'deferred_entries' => $deferredFromPrevious->count(),
+                'current_month_entries' => $timeEntries->count(),
                 'total_hours' => floor($totalDuration),
                 'total_minutes' => ($totalMinutes + ($totalHours * 60)) % 60,
                 'total_duration_formatted' => sprintf('%d:%02d', floor($totalDuration), ($totalMinutes + ($totalHours * 60)) % 60),
@@ -3734,61 +3982,113 @@ public function show(Project $project): View
             $monthStart = \Carbon\Carbon::createFromDate($year, $month, 1)->startOfMonth();
             $monthEnd = $monthStart->copy()->endOfMonth();
 
+            // NIEUWE LOGICA (08-11-2025): Check eerst of er een factuur bestaat voor deze maand
+            // Als factuur bestaat: gebruik factuur data (work_amount, monthly_budget, total_budget)
+            // Als geen factuur: gebruik time entries berekening (zoals voorheen)
+            $invoiceForMonth = null;
+            foreach ($seriesProjects as $seriesProject) {
+                $invoice = \App\Models\Invoice::where('project_id', $seriesProject->id)
+                    ->where('period_start', '>=', $monthStart)
+                    ->where('period_end', '<=', $monthEnd)
+                    ->first();
+
+                if ($invoice) {
+                    $invoiceForMonth = $invoice;
+                    break; // Gebruik eerste gevonden invoice voor deze maand
+                }
+            }
+
             // Aggregate data from ALL projects in series for this month
             $totalHours = 0;
             $totalCosts = 0;
             $projectsWithDataThisMonth = [];
             $activeProjectThisMonth = null; // Track which project is active this month
 
-            foreach ($seriesProjects as $seriesProject) {
-                // Check if this project was active in this month
-                $projectStart = $seriesProject->start_date ? \Carbon\Carbon::parse($seriesProject->start_date) : null;
-                $projectEnd = $seriesProject->end_date ? \Carbon\Carbon::parse($seriesProject->end_date) : null;
+            // Als er een factuur is voor deze maand, gebruik factuur data
+            if ($invoiceForMonth) {
+                // Gebruik data uit factuur
+                $totalCosts = $invoiceForMonth->work_amount + $invoiceForMonth->service_amount; // "Used from Budget"
 
-                // Check if project is active in this month
-                $isActiveThisMonth = true;
-                if ($projectStart && $projectStart->gt($monthEnd)) {
-                    $isActiveThisMonth = false;
-                }
-                if ($projectEnd && $projectEnd->lt($monthStart)) {
-                    $isActiveThisMonth = false;
-                }
-
-                // KRITIEKE FIX (03-11-2025): Track het actieve project voor deze maand
-                // Dit project's monthly_fee wordt gebruikt als budget
-                if ($isActiveThisMonth && !$activeProjectThisMonth) {
-                    // Check if start_date is in this month (exact match)
-                    if ($projectStart && $projectStart->month == $month && $projectStart->year == $year) {
-                        $activeProjectThisMonth = $seriesProject;
-                    }
-                }
-
-                if (!$isActiveThisMonth) {
-                    continue;
-                }
-
-                // Get time entries for this project in this month
-                $timeEntries = \App\Models\TimeEntry::where('project_id', $seriesProject->id)
+                // Haal uren op voor deze maand (voor display doeleinden)
+                $timeEntries = \App\Models\TimeEntry::where('project_id', $invoiceForMonth->project_id)
                     ->where('status', 'approved')
                     ->whereBetween('entry_date', [$monthStart, $monthEnd])
+                    ->where('is_billable', 'billable')
                     ->get();
 
-                if ($timeEntries->count() > 0) {
-                    $projectsWithDataThisMonth[] = $seriesProject->name;
+                foreach ($timeEntries as $entry) {
+                    $totalHours += $entry->hours + ($entry->minutes / 60);
                 }
 
-                foreach ($timeEntries as $entry) {
-                    $entryHours = $entry->hours + ($entry->minutes / 60);
+                // Find the active project for this invoice
+                $activeProjectThisMonth = $seriesProjects->firstWhere('id', $invoiceForMonth->project_id);
+                $projectsWithDataThisMonth[] = $activeProjectThisMonth?->name ?? 'Unknown';
 
-                    // KRITIEKE FIX (03-11-2025): Alleen billable uren meetellen!
-                    // Non-billable tijdregistraties mogen NIET meegeteld worden
-                    if ($entry->is_billable === 'billable') {
-                        $totalHours += $entryHours;  // Tel alleen billable uren mee!
+                Log::info('Series Budget: Using INVOICE data for month', [
+                    'month' => $month,
+                    'year' => $year,
+                    'invoice_id' => $invoiceForMonth->id,
+                    'work_amount' => $invoiceForMonth->work_amount,
+                    'service_amount' => $invoiceForMonth->service_amount,
+                    'total_used' => $totalCosts
+                ]);
+            } else {
+                // GEEN factuur: gebruik time entries berekening (oude methode)
+                foreach ($seriesProjects as $seriesProject) {
+                    // Check if this project was active in this month
+                    $projectStart = $seriesProject->start_date ? \Carbon\Carbon::parse($seriesProject->start_date) : null;
+                    $projectEnd = $seriesProject->end_date ? \Carbon\Carbon::parse($seriesProject->end_date) : null;
 
-                        $hourlyRate = $entry->hourly_rate_used ?? $seriesProject->default_hourly_rate ?? 75;
-                        $totalCosts += $entryHours * $hourlyRate;
+                    // Check if project is active in this month
+                    $isActiveThisMonth = true;
+                    if ($projectStart && $projectStart->gt($monthEnd)) {
+                        $isActiveThisMonth = false;
+                    }
+                    if ($projectEnd && $projectEnd->lt($monthStart)) {
+                        $isActiveThisMonth = false;
+                    }
+
+                    // KRITIEKE FIX (08-11-2025): Track het actieve project voor deze maand
+                    // Dit project's monthly_fee wordt gebruikt als budget
+                    // Als het project actief is in deze maand, gebruik het
+                    if ($isActiveThisMonth && !$activeProjectThisMonth) {
+                        $activeProjectThisMonth = $seriesProject;
+                    }
+
+                    if (!$isActiveThisMonth) {
+                        continue;
+                    }
+
+                    // Get time entries for this project in this month
+                    $timeEntries = \App\Models\TimeEntry::where('project_id', $seriesProject->id)
+                        ->where('status', 'approved')
+                        ->whereBetween('entry_date', [$monthStart, $monthEnd])
+                        ->get();
+
+                    if ($timeEntries->count() > 0) {
+                        $projectsWithDataThisMonth[] = $seriesProject->name;
+                    }
+
+                    foreach ($timeEntries as $entry) {
+                        $entryHours = $entry->hours + ($entry->minutes / 60);
+
+                        // KRITIEKE FIX (03-11-2025): Alleen billable uren meetellen!
+                        // Non-billable tijdregistraties mogen NIET meegeteld worden
+                        if ($entry->is_billable === 'billable') {
+                            $totalHours += $entryHours;  // Tel alleen billable uren mee!
+
+                            $hourlyRate = $entry->hourly_rate_used ?? $seriesProject->default_hourly_rate ?? 75;
+                            $totalCosts += $entryHours * $hourlyRate;
+                        }
                     }
                 }
+
+                Log::info('Series Budget: Using TIME ENTRIES data for month', [
+                    'month' => $month,
+                    'year' => $year,
+                    'total_hours' => $totalHours,
+                    'total_costs' => $totalCosts
+                ]);
             }
 
             // KRITIEKE FIX (03-11-2025): Rollover logica met "pending" voor maanden zonder project
@@ -3855,6 +4155,8 @@ public function show(Project $project): View
                 'status_label' => $statusLabel,
                 'projects_with_data' => $projectsWithDataThisMonth,
                 'project_count' => count($projectsWithDataThisMonth),
+                'from_invoice' => $invoiceForMonth !== null, // NIEUW: Flag of data uit invoice komt
+                'invoice_id' => $invoiceForMonth?->id, // NIEUW: Invoice ID voor referentie
             ];
         }
 

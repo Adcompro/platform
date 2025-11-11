@@ -33,11 +33,13 @@ class Customer extends Model
         'company',
         'notes',
         'status',
+        'start_date',
         'is_active'
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
+        'start_date' => 'date',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         // 'deleted_at' => 'datetime'  // ← UITGESCHAKELD
@@ -73,6 +75,14 @@ class Customer extends Model
     public function projects(): HasMany
     {
         return $this->hasMany(Project::class);
+    }
+
+    /**
+     * Get all invoices for this customer
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
     }
 
     /**

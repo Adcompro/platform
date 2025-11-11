@@ -23,6 +23,8 @@ class RecurringDashboardController extends Controller
         }
 
         $currentYear = $request->input('year', Carbon::now()->year);
+        $selectedCompanyId = $request->input('company_id', null);
+
         $months = [];
         for ($m = 1; $m <= 12; $m++) {
             $months[] = [
@@ -32,14 +34,24 @@ class RecurringDashboardController extends Controller
             ];
         }
 
+        // Haal alle beschikbare companies op voor de filter dropdown
+        $companiesQuery = \App\Models\Company::where('is_active', true)->orderBy('name');
+
+        // Company isolation voor non-super_admin/admin
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
+            $companiesQuery->where('id', Auth::user()->company_id);
+        }
+
+        $allCompanies = $companiesQuery->get();
+
         // Haal alle projecten op die deel uitmaken van een recurring series
-        $query = Project::with(['customer', 'companyRelation'])
+        $recurringQuery = Project::with(['customer', 'companyRelation'])
             ->whereNotNull('recurring_series_id')
             ->whereYear('start_date', $currentYear);
 
-        // Company isolation voor non-super_admin
+        // Company isolation voor non-super_admin/admin
         if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
-            $query->where(function($q) {
+            $recurringQuery->where(function($q) {
                 // Check direct company_id OF via pivot tabel
                 $q->where('company_id', Auth::user()->company_id)
                   ->orWhereHas('companies', function($subQ) {
@@ -48,13 +60,52 @@ class RecurringDashboardController extends Controller
             });
         }
 
-        $allRecurringProjects = $query->orderBy('recurring_series_id')->orderBy('start_date')->get();
+        // Optionele company filter (geselecteerd via dropdown)
+        if ($selectedCompanyId) {
+            $recurringQuery->where(function($q) use ($selectedCompanyId) {
+                $q->where('company_id', $selectedCompanyId)
+                  ->orWhereHas('companies', function($subQ) use ($selectedCompanyId) {
+                      $subQ->where('companies.id', $selectedCompanyId);
+                  });
+            });
+        }
+
+        $allRecurringProjects = $recurringQuery->orderBy('recurring_series_id')->orderBy('start_date')->get();
+
+        // NIEUW (08-11-2025): Haal ook losse projecten op ZONDER recurring_series_id
+        $individualQuery = Project::with(['customer', 'companyRelation'])
+            ->whereNull('recurring_series_id')
+            ->whereYear('start_date', $currentYear)
+            ->where('status', '!=', 'cancelled'); // Skip cancelled projecten
+
+        // Company isolation voor non-super_admin/admin
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
+            $individualQuery->where(function($q) {
+                $q->where('company_id', Auth::user()->company_id)
+                  ->orWhereHas('companies', function($subQ) {
+                      $subQ->where('companies.id', Auth::user()->company_id);
+                  });
+            });
+        }
+
+        // Optionele company filter (geselecteerd via dropdown)
+        if ($selectedCompanyId) {
+            $individualQuery->where(function($q) use ($selectedCompanyId) {
+                $q->where('company_id', $selectedCompanyId)
+                  ->orWhereHas('companies', function($subQ) use ($selectedCompanyId) {
+                      $subQ->where('companies.id', $selectedCompanyId);
+                  });
+            });
+        }
+
+        $allIndividualProjects = $individualQuery->orderBy('start_date')->get();
 
         // Groepeer projecten per recurring_series_id
         $seriesGroups = $allRecurringProjects->groupBy('recurring_series_id');
 
-        // Haal alle monthly fee data op voor alle projecten
-        $allMonthlyFees = ProjectMonthlyFee::whereIn('project_id', $allRecurringProjects->pluck('id'))
+        // Haal alle monthly fee data op voor alle projecten (recurring + individual)
+        $allProjectIds = $allRecurringProjects->pluck('id')->merge($allIndividualProjects->pluck('id'));
+        $allMonthlyFees = ProjectMonthlyFee::whereIn('project_id', $allProjectIds)
             ->where('year', $currentYear)
             ->get();
 
@@ -82,21 +133,19 @@ class RecurringDashboardController extends Controller
             }
 
             // Verzamel monthly_fees voor deze serie
-            // Strategie: gebruik alleen de fee van het project dat bij die maand hoort
-            // Match op basis van project start_date month = fee month
+            // KRITIEKE FIX (08-11-2025): Gebruik ALLE fee records, niet alleen matching met start_date
+            // Elke fee record representeert de data voor die specifieke maand
             $seriesMonthlyFees = collect();
 
             foreach ($projects as $project) {
-                $projectFees = $allMonthlyFees->where('project_id', $project->id);
+                // Haal alle fees op voor dit project
+                $projectFees = $allMonthlyFees->filter(function($fee) use ($project) {
+                    return $fee->project_id == $project->id;
+                });
+
+                // Voeg alle fees toe aan de series collection, geïndexeerd op maand nummer
                 foreach ($projectFees as $fee) {
-                    // Gebruik alleen fees waar de maand overeenkomt met project start_date
-                    if ($project->start_date) {
-                        $projectMonth = Carbon::parse($project->start_date)->month;
-                        // Alleen gebruiken als dit de correcte maand is voor dit project
-                        if ($fee->month == $projectMonth) {
-                            $seriesMonthlyFees->put($fee->month, $fee);
-                        }
-                    }
+                    $seriesMonthlyFees->put($fee->month, $fee);
                 }
             }
 
@@ -145,6 +194,9 @@ class RecurringDashboardController extends Controller
                         'base_budget' => $baseMonthlyBudget, // Budget ZONDER rollover (voor maandweergave)
                         'budget' => $budgetWithRollover, // Budget MET rollover (voor totalen berekening)
                         'spent' => $spent,
+                        'hours_value' => $fee->hours_value, // Breakdown: tijd registratie kosten
+                        'additional_costs_in_fee' => $fee->additional_costs_in_fee, // Breakdown: additional costs binnen budget
+                        'additional_costs_outside_fee' => $fee->additional_costs_outside_fee, // Breakdown: additional costs buiten budget
                         'month_variance' => $monthVariance, // Variance ZONDER rollover (voor maandweergave)
                         'variance' => $budgetWithRollover - $spent, // Variance MET rollover (voor totalen)
                         'variance_percentage' => $monthVariancePercentage, // Percentage ZONDER rollover
@@ -200,7 +252,110 @@ class RecurringDashboardController extends Controller
                 'customer' => $firstProject->customer,
                 'monthly_data' => $monthlyData,
                 'year_totals' => $yearTotals,
-                'has_monthly_fee' => $hasMonthlyFee
+                'has_monthly_fee' => $hasMonthlyFee,
+                'is_individual' => false
+            ];
+        }
+
+        // NIEUW (08-11-2025): Verwerk individuele projecten (zonder recurring_series_id)
+        $individualProjectsData = [];
+        foreach ($allIndividualProjects as $project) {
+            // Haal fee data op voor dit project
+            $projectFees = $allMonthlyFees->filter(function($fee) use ($project) {
+                return $fee->project_id == $project->id;
+            });
+
+            $monthlyData = [];
+            $yearTotals = [
+                'budget' => 0,
+                'spent' => 0,
+                'variance' => 0,
+                'hours' => 0
+            ];
+
+            for ($month = 1; $month <= 12; $month++) {
+                $fee = $projectFees->where('month', $month)->first();
+
+                if ($fee) {
+                    $baseMonthlyBudget = $fee->base_monthly_fee;
+                    $budgetWithRollover = $fee->base_monthly_fee + $fee->rollover_from_previous;
+                    $spent = $fee->hours_value + $fee->additional_costs_in_fee;
+                    $monthVariance = $baseMonthlyBudget - $spent;
+                    $monthVariancePercentage = $baseMonthlyBudget > 0 ? (($monthVariance / $baseMonthlyBudget) * 100) : 0;
+
+                    $status = 'no-data';
+                    if ($spent == 0) {
+                        $status = 'no-data';
+                    } elseif ($monthVariancePercentage > 10) {
+                        $status = 'underspent';
+                    } elseif ($monthVariancePercentage < -10) {
+                        $status = 'overspent';
+                    } elseif ($monthVariancePercentage >= -10 && $monthVariancePercentage <= 10) {
+                        $status = 'on-budget';
+                    }
+
+                    $monthlyData[$month] = [
+                        'project_id' => $project->id,
+                        'project_name' => $project->name,
+                        'project_status' => $project->status,
+                        'base_budget' => $baseMonthlyBudget,
+                        'budget' => $budgetWithRollover,
+                        'spent' => $spent,
+                        'hours_value' => $fee->hours_value,
+                        'additional_costs_in_fee' => $fee->additional_costs_in_fee,
+                        'additional_costs_outside_fee' => $fee->additional_costs_outside_fee,
+                        'month_variance' => $monthVariance,
+                        'variance' => $budgetWithRollover - $spent,
+                        'variance_percentage' => $monthVariancePercentage,
+                        'hours' => $fee->hours_worked,
+                        'rollover' => $fee->rollover_to_next,
+                        'status' => $status,
+                        'has_data' => true
+                    ];
+
+                    $yearTotals['budget'] += $baseMonthlyBudget;
+                    $yearTotals['spent'] += $spent;
+                    $yearTotals['variance'] += ($baseMonthlyBudget - $spent);
+                    $yearTotals['hours'] += $fee->hours_worked;
+                } else {
+                    $monthlyData[$month] = [
+                        'project_id' => $project->id,
+                        'project_name' => $project->name,
+                        'project_status' => $project->status,
+                        'budget' => $project->monthly_fee ?? 0,
+                        'spent' => 0,
+                        'variance' => 0,
+                        'variance_percentage' => 0,
+                        'hours' => 0,
+                        'rollover' => 0,
+                        'status' => 'no-data',
+                        'has_data' => false
+                    ];
+                }
+            }
+
+            $hasMonthlyFee = ($project->monthly_fee ?? 0) > 0;
+
+            // Tel mee in grandTotals
+            if ($hasMonthlyFee) {
+                $grandTotals['budget'] += $yearTotals['budget'];
+                $grandTotals['spent'] += $yearTotals['spent'];
+                $grandTotals['variance'] += $yearTotals['variance'];
+                $grandTotals['hours'] += $yearTotals['hours'];
+            } else {
+                $grandTotals['spent'] += $yearTotals['spent'];
+                $grandTotals['hours'] += $yearTotals['hours'];
+            }
+
+            $individualProjectsData[] = [
+                'series_id' => null,
+                'series_name' => $project->name,
+                'customer' => $project->customer,
+                'monthly_data' => $monthlyData,
+                'year_totals' => $yearTotals,
+                'has_monthly_fee' => $hasMonthlyFee,
+                'is_individual' => true,
+                'project' => $project
             ];
         }
 
@@ -214,8 +369,8 @@ class RecurringDashboardController extends Controller
                 'hours' => 0
             ];
 
+            // Tel recurring series mee
             foreach ($projectsData as $seriesData) {
-                // Tel alleen projecten MET budget mee in maandtotalen
                 if ($seriesData['has_monthly_fee']) {
                     $monthTotals[$month]['budget'] += $seriesData['monthly_data'][$month]['budget'];
                     $monthTotals[$month]['spent'] += $seriesData['monthly_data'][$month]['spent'];
@@ -223,26 +378,44 @@ class RecurringDashboardController extends Controller
                     $monthTotals[$month]['hours'] += $seriesData['monthly_data'][$month]['hours'];
                 }
             }
+
+            // NIEUW (08-11-2025): Tel ook individuele projecten mee
+            foreach ($individualProjectsData as $individualData) {
+                if ($individualData['has_monthly_fee']) {
+                    $monthTotals[$month]['budget'] += $individualData['monthly_data'][$month]['budget'];
+                    $monthTotals[$month]['spent'] += $individualData['monthly_data'][$month]['spent'];
+                    $monthTotals[$month]['variance'] += $individualData['monthly_data'][$month]['variance'];
+                    $monthTotals[$month]['hours'] += $individualData['monthly_data'][$month]['hours'];
+                }
+            }
         }
 
         // Available years voor dropdown
         $availableYears = range(Carbon::now()->year - 2, Carbon::now()->year + 1);
 
-        // Splits projecten in overspent, underspent en no-budget
+        // Splits projecten in overspent, underspent en no-budget (recurring + individual)
         $overspentProjects = [];
         $underspentProjects = [];
         $noBudgetProjects = [];
 
+        // Verwerk recurring series
         foreach ($projectsData as $project) {
-            // Check of project een monthly_fee heeft ingesteld
             if (!$project['has_monthly_fee']) {
-                // Geen budget ingesteld -> Hours Tracking Only sectie
                 $noBudgetProjects[] = $project;
             } elseif ($project['year_totals']['variance'] < 0) {
-                // Budget overschreden
                 $overspentProjects[] = $project;
             } else {
-                // Budget niet overschreden
+                $underspentProjects[] = $project;
+            }
+        }
+
+        // NIEUW (08-11-2025): Verwerk ook individuele projecten
+        foreach ($individualProjectsData as $project) {
+            if (!$project['has_monthly_fee']) {
+                $noBudgetProjects[] = $project;
+            } elseif ($project['year_totals']['variance'] < 0) {
+                $overspentProjects[] = $project;
+            } else {
                 $underspentProjects[] = $project;
             }
         }
@@ -278,7 +451,9 @@ class RecurringDashboardController extends Controller
             'monthTotals',
             'grandTotals',
             'currentYear',
-            'availableYears'
+            'availableYears',
+            'allCompanies',
+            'selectedCompanyId'
         ));
     }
 
@@ -310,10 +485,12 @@ class RecurringDashboardController extends Controller
 
         try {
             $year = $request->input('year', Carbon::now()->year);
+            $companyId = $request->input('company_id', null);
 
             \Log::info('Manual budget tracking refresh initiated', [
                 'user_id' => Auth::id(),
-                'year' => $year
+                'year' => $year,
+                'company_id' => $companyId
             ]);
 
             // Roep het artisan command aan met timeout van 300 seconden (5 minuten)
@@ -325,10 +502,17 @@ class RecurringDashboardController extends Controller
 
             \Log::info('Budget tracking refresh completed successfully', [
                 'user_id' => Auth::id(),
-                'year' => $year
+                'year' => $year,
+                'company_id' => $companyId
             ]);
 
-            return redirect()->route('recurring-dashboard', ['year' => $year])
+            // Build redirect parameters
+            $redirectParams = ['year' => $year];
+            if ($companyId) {
+                $redirectParams['company_id'] = $companyId;
+            }
+
+            return redirect()->route('recurring-dashboard', $redirectParams)
                 ->with('success', 'Budget tracking data successfully refreshed for ' . $year . '!');
 
         } catch (\Exception $e) {

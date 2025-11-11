@@ -568,7 +568,7 @@
     @endif
 </head>
 <body class="antialiased bg-gradient-to-br from-slate-50 via-white to-slate-50" style="font-family: 'Open Sans', sans-serif;" x-data="{
-    activeSection: @if(request()->routeIs('recurring-dashboard')) 'recurring' @elseif(request()->routeIs('calendar.*')) 'calendar' @elseif(request()->routeIs('projects.*')) 'projects' @elseif(request()->routeIs('customers.*') || request()->routeIs('contacts.*')) 'crm' @elseif(request()->routeIs('time-entries.*')) 'timetracking' @elseif(request()->routeIs('invoices.*')) 'invoices' @elseif(request()->routeIs('settings.*') || request()->routeIs('users.*') || request()->routeIs('companies.*')) 'configuration' @else localStorage.getItem('activeMenuSection') || 'dashboard' @endif,
+    activeSection: @if(request()->routeIs('recurring-dashboard')) 'recurring' @elseif(request()->routeIs('calendar.*')) 'calendar' @elseif(request()->routeIs('reports.*')) 'reports' @elseif(request()->routeIs('projects.*')) 'projects' @elseif(request()->routeIs('customers.*') || request()->routeIs('contacts.*')) 'crm' @elseif(request()->routeIs('time-entries.*')) 'timetracking' @elseif(request()->routeIs('invoices.*')) 'invoices' @elseif(request()->routeIs('settings.*') || request()->routeIs('users.*') || request()->routeIs('companies.*')) 'configuration' @else localStorage.getItem('activeMenuSection') || 'dashboard' @endif,
     sidebarOpen: true
 }" x-init="$watch('activeSection', value => localStorage.setItem('activeMenuSection', value))">
     @php
@@ -708,24 +708,15 @@
                             @endif
                         </div>
 
-                        {{-- Reports Tabs - UITGESCHAKELD
+                        <!-- Reports Tabs -->
                         @if(in_array(Auth::user()->role ?? '', ['super_admin', 'admin', 'project_manager']))
                         <div x-show="activeSection === 'reports'" x-transition class="flex space-x-6">
-                            <a href="{{ route('reports.quick-reports') }}"
-                               class="tab-item @if(request()->routeIs('reports.*')) active @endif">
-                                Overview
-                            </a>
-                            <a href="{{ route('project-intelligence.index') }}"
-                               class="tab-item @if(request()->routeIs('project-intelligence.*')) active @endif">
-                                AI Intelligence
-                            </a>
-                            <a href="{{ route('settings.ai-usage') }}"
-                               class="tab-item @if(request()->routeIs('settings.ai-usage')) active @endif">
-                                AI Usage
+                            <a href="{{ route('reports.index') }}"
+                               class="tab-item @if(request()->routeIs('reports.index')) active @endif">
+                                Activity Reports
                             </a>
                         </div>
                         @endif
-                        --}}
 
                         <!-- Configuration Tabs -->
                         <div x-show="activeSection === 'configuration'" x-transition class="flex space-x-6">
@@ -1006,18 +997,20 @@
                         @endif
                     </button>
 
-                    {{-- Reports - UITGESCHAKELD
+                    <!-- Reports -->
                     @if(in_array(Auth::user()->role ?? '', ['super_admin', 'admin', 'project_manager']))
-                    <button @click="activeSection = 'reports'"
+                    <button @click="activeSection = 'reports'; window.location.href = '{{ route('reports.index') }}'"
                             :class="activeSection === 'reports' ? 'active' : ''"
                             class="flex flex-col items-center justify-center w-16 h-16 rounded-lg px-1 py-2"
-                            title="Reports"
+                            title="Activity Reports"
                             :style="activeSection === 'reports' ? 'background-color: var(--theme-sidebar-active) !important; color: white !important;' : 'color: var(--theme-sidebar-text) !important; background: transparent !important;'">
-                        <i class="fas fa-chart-bar mb-1" style="font-size: var(--theme-sidebar-icon-size);"></i>
-                        <span class="leading-tight text-center" style="font-size: var(--theme-sidebar-text-size);">Statistics</span>
+                        <i class="fas fa-chart-line mb-1" style="font-size: var(--theme-sidebar-icon-size);"></i>
+                        <span class="leading-tight text-center" style="font-size: var(--theme-sidebar-text-size);">Reports</span>
                     </button>
                     @endif
-                    --}}
+
+                    <!-- Spacer om Settings naar beneden te duwen -->
+                    <div class="flex-1"></div>
 
                     <!-- Configuration -->
                     <button @click="activeSection = 'configuration'"

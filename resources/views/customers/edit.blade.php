@@ -89,8 +89,8 @@
                             <label for="contact_person" class="block text-[13px] font-normal mb-1" style="color: var(--theme-text);">
                                 Contact Person
                             </label>
-                            <input type="text" 
-                                   name="contact_person" 
+                            <input type="text"
+                                   name="contact_person"
                                    id="contact_person"
                                    value="{{ old('contact_person', $customer->contact_person) }}"
                                    class="w-full px-3 py-2 text-[13px] border border-gray-300 rounded-lg @error('contact_person') border-red-300 @enderror"
@@ -100,33 +100,23 @@
                             @enderror
                         </div>
 
-                        <div>
-                            <label for="company" class="block text-[13px] font-normal mb-1" style="color: var(--theme-text);">
-                                Company
-                            </label>
-                            <input type="text" 
-                                   name="company" 
-                                   id="company"
-                                   value="{{ old('company', $customer->company) }}"
-                                   class="w-full px-3 py-2 text-[13px] border border-gray-300 rounded-lg @error('company') border-red-300 @enderror"
-                                   style="color: var(--theme-text); background-color: white;">
-                            @error('company')
-                                <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        @if(Auth::user()->role === 'super_admin')
+                        @if(in_array(Auth::user()->role, ['super_admin', 'admin']))
                         <div>
                             <label for="company_id" class="block text-[13px] font-normal mb-1" style="color: var(--theme-text);">
                                 Managing Company <span class="text-red-500">*</span>
                             </label>
-                            <select name="company_id" 
+                            <select name="company_id"
                                     id="company_id"
                                     required
                                     class="w-full px-3 py-2 text-[13px] border border-gray-300 rounded-lg @error('company_id') border-red-300 @enderror"
                                     style="color: var(--theme-text); background-color: white;">
                                 <option value="">Select a company</option>
-                                @foreach(\App\Models\Company::orderBy('name')->get() as $company)
+                                @php
+                                    $companies = Auth::user()->role === 'super_admin'
+                                        ? \App\Models\Company::orderBy('name')->get()
+                                        : \App\Models\Company::where('id', Auth::user()->company_id)->orderBy('name')->get();
+                                @endphp
+                                @foreach($companies as $company)
                                     <option value="{{ $company->id }}" {{ old('company_id', $customer->company_id) == $company->id ? 'selected' : '' }}>
                                         {{ $company->name }}
                                     </option>
@@ -135,6 +125,9 @@
                             @error('company_id')
                                 <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
                             @enderror
+                            <p class="mt-1 text-[11px]" style="color: var(--theme-text-muted);">
+                                {{ Auth::user()->role === 'super_admin' ? 'Select the company that will manage this customer' : 'Your company manages this customer' }}
+                            </p>
                         </div>
                         @else
                         <input type="hidden" name="company_id" value="{{ $customer->company_id }}">
@@ -143,7 +136,7 @@
                                 Managing Company
                             </label>
                             <div class="px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg">
-                                <span class="text-[13px]" style="color: var(--theme-text);">{{ $customer->companyRelation->name }}</span>
+                                <span class="text-[13px]" style="color: var(--theme-text);">{{ $customer->companyRelation->name ?? 'No company assigned' }}</span>
                             </div>
                         </div>
                         @endif
@@ -337,20 +330,38 @@
                         <p class="mt-1 text-[11px]" style="color: var(--theme-text-muted);">Any additional information about the customer</p>
                     </div>
 
-                    <div>
-                        <label for="status" class="block text-[13px] font-normal mb-1" style="color: var(--theme-text);">
-                            Status
-                        </label>
-                        <select name="status" 
-                                id="status"
-                                class="w-full px-3 py-2 text-[13px] border border-gray-300 rounded-lg @error('status') border-red-300 @enderror"
-                                style="color: var(--theme-text); background-color: white;">
-                            <option value="active" {{ old('status', $customer->status) == 'active' ? 'selected' : '' }}>Active</option>
-                            <option value="inactive" {{ old('status', $customer->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
-                        </select>
-                        @error('status')
-                            <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
-                        @enderror
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="status" class="block text-[13px] font-normal mb-1" style="color: var(--theme-text);">
+                                Status
+                            </label>
+                            <select name="status"
+                                    id="status"
+                                    class="w-full px-3 py-2 text-[13px] border border-gray-300 rounded-lg @error('status') border-red-300 @enderror"
+                                    style="color: var(--theme-text); background-color: white;">
+                                <option value="active" {{ old('status', $customer->status) == 'active' ? 'selected' : '' }}>Active</option>
+                                <option value="inactive" {{ old('status', $customer->status) == 'inactive' ? 'selected' : '' }}>Inactive</option>
+                            </select>
+                            @error('status')
+                                <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <div>
+                            <label for="start_date" class="block text-[13px] font-normal mb-1" style="color: var(--theme-text);">
+                                Customer Start Date
+                            </label>
+                            <input type="date"
+                                   name="start_date"
+                                   id="start_date"
+                                   value="{{ old('start_date', $customer->start_date ? $customer->start_date->format('Y-m-d') : '') }}"
+                                   class="w-full px-3 py-2 text-[13px] border border-gray-300 rounded-lg @error('start_date') border-red-300 @enderror"
+                                   style="color: var(--theme-text); background-color: white;">
+                            @error('start_date')
+                                <p class="mt-1 text-[11px] text-red-600">{{ $message }}</p>
+                            @enderror
+                            <p class="mt-1 text-[11px]" style="color: var(--theme-text-muted);">When did this customer relationship start?</p>
+                        </div>
                     </div>
 
                     {{-- Invoice Template --}}

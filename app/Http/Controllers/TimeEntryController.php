@@ -125,7 +125,7 @@ class TimeEntryController extends Controller
         $user = Auth::user();
         
         // Query builder met eager loading
-        $query = TimeEntry::with(['user', 'project', 'milestone', 'task', 'approver', 'deferredBy']);
+        $query = TimeEntry::with(['user', 'project', 'milestone', 'task', 'approver', 'deferredBy', 'invoice']);
 
         // Alleen eigen entries tenzij admin/super_admin
         if (!in_array($user->role, ['super_admin', 'admin'])) {
@@ -167,7 +167,8 @@ class TimeEntryController extends Controller
         // Get projects voor filter dropdown
         // Super_admin ziet alle projecten, admin ziet company projecten, anderen alleen assigned projecten
         // Completed projecten worden uitgefilterd
-        $projects = Project::when($user->role === 'admin', function($q) use ($user) {
+        $projects = Project::with('customer')  // Eager load customer voor display met klantnaam
+            ->when($user->role === 'admin', function($q) use ($user) {
                 // Admin ziet alle projecten in eigen company
                 $q->where('company_id', $user->company_id);
             })
@@ -291,10 +292,10 @@ class TimeEntryController extends Controller
             return back()->withErrors(['work_item' => 'Invalid work item selected'])->withInput();
         }
 
-        // Check dat user member is van het project
+        // Check dat user member is van het project (admin/super_admin kunnen altijd tijd registreren)
         $project = Project::findOrFail($validated['project_id']);
-        
-        if (!$project->users->contains(Auth::user())) {
+
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin']) && !$project->users->contains(Auth::user())) {
             abort(403, 'You are not a member of this project');
         }
 
@@ -306,15 +307,18 @@ class TimeEntryController extends Controller
             $status = 'pending';
             $approvedBy = null;
             $approvedAt = null;
-            
+
             if ($user->auto_approve_time_entries) {
                 $status = 'approved';
-                $approvedBy = $user->id; // Self-approved
+                // Gebruik System user voor auto-approvals (consistent met imports)
+                $systemUser = \App\Models\User::where('email', 'system@progress.adcompro.app')->first();
+                $approvedBy = $systemUser ? $systemUser->id : $user->id; // Fallback naar user als System niet bestaat
                 $approvedAt = now();
-                
+
                 Log::info('Auto-approving time entry for user with auto-approve enabled', [
                     'user_id' => $user->id,
-                    'user_name' => $user->name
+                    'user_name' => $user->name,
+                    'approved_by_system' => $systemUser ? true : false
                 ]);
             }
 

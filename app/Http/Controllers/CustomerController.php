@@ -122,6 +122,7 @@ class CustomerController extends Controller
             'company' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
             'status' => 'required|in:active,inactive',
+            'start_date' => 'nullable|date',
             'company_id' => Auth::user()->role === 'super_admin' ? 'required|exists:companies,id' : 'nullable'
         ]);
 
@@ -146,6 +147,7 @@ class CustomerController extends Controller
                 'company' => $request->company,
                 'notes' => $request->notes,
                 'status' => $request->status,
+                'start_date' => $request->start_date,
                 'is_active' => $request->status === 'active' ? 1 : 0,
                 'address' => null // Clear old address field
             ];
@@ -204,7 +206,7 @@ class CustomerController extends Controller
         }
 
         // Eager loading met relationships
-        $customer->load(['companyRelation', 'projects.companies', 'contacts']);
+        $customer->load(['companyRelation', 'companies', 'projects.companies', 'contacts']);
 
         // Add budget data for each project - GEOPTIMALISEERD met batch loading
         $budgetService = new \App\Services\ProjectBudgetService();
@@ -360,7 +362,14 @@ class CustomerController extends Controller
             $recurringTimelines[] = $timeline;
         }
 
-        return view('customers.show', compact('customer', 'stats', 'recentProjects', 'templates', 'existingSeriesIds', 'recurringTimelines'));
+        // Get invoices for this customer
+        $invoices = $customer->invoices()
+            ->with('project')
+            ->orderBy('invoice_date', 'desc')
+            ->limit(10)
+            ->get();
+
+        return view('customers.show', compact('customer', 'stats', 'recentProjects', 'templates', 'existingSeriesIds', 'recurringTimelines', 'invoices'));
     }
 
     public function edit(Customer $customer)
@@ -476,6 +485,7 @@ class CustomerController extends Controller
             'company' => 'nullable|string|max:255',
             'notes' => 'nullable|string',
             'status' => 'required|in:active,inactive',
+            'start_date' => 'nullable|date',
             'companies' => 'array',
             'companies.*' => 'exists:companies,id',
             'company_primary' => 'array'
@@ -504,6 +514,7 @@ class CustomerController extends Controller
                 'company' => $request->company,
                 'notes' => $request->notes,
                 'status' => $request->status,
+                'start_date' => $request->start_date,
                 'is_active' => $request->status === 'active' ? 1 : 0,
                 'address' => null // Clear old address field
             ];
@@ -893,6 +904,7 @@ class CustomerController extends Controller
             'company' => 'nullable|string|max:255',
             'contact_person' => 'nullable|string|max:255',
             'status' => 'required|in:active,inactive',
+            'start_date' => 'nullable|date',
             'email' => 'nullable|email|max:255',
             'phone' => 'nullable|string|max:50',
             'street' => 'nullable|string|max:255',
@@ -903,10 +915,33 @@ class CustomerController extends Controller
             'language' => 'nullable|string|in:nl,en,fr,de,es,it',
             'company_id' => 'nullable|exists:companies,id',
             'notes' => 'nullable|string',
+            'companies' => 'array',
+            'companies.*' => 'exists:companies,id',
+            'company_primary' => 'nullable|exists:companies,id',
         ]);
 
         try {
+            DB::beginTransaction();
+
             $customer->update($validated);
+
+            // Update managing companies (many-to-many relationship)
+            if (in_array(Auth::user()->role, ['super_admin', 'admin']) && isset($validated['companies'])) {
+                $companiesData = [];
+                $primaryCompanyId = $validated['company_primary'] ?? null;
+
+                foreach ($validated['companies'] as $companyId) {
+                    $companiesData[$companyId] = [
+                        'is_primary' => ($companyId == $primaryCompanyId),
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ];
+                }
+
+                $customer->companies()->sync($companiesData);
+            }
+
+            DB::commit();
 
             // Log activity
             CustomerActivity::create([
@@ -926,6 +961,7 @@ class CustomerController extends Controller
                 'customer' => $customer->fresh()
             ]);
         } catch (\Exception $e) {
+            DB::rollback();
             \Log::error('Failed to update customer inline', [
                 'error' => $e->getMessage(),
                 'customer_id' => $customer->id
@@ -983,4 +1019,160 @@ class CustomerController extends Controller
             return redirect()->back()->with('error', 'Failed to import contacts: ' . $e->getMessage());
         }
     }
+
+    /**
+     * API endpoint: Haal alle projecten op voor een customer (voor invoice creation dropdown)
+     */
+    public function getProjects(Customer $customer)
+    {
+        // Authorization check
+        if (!Auth::check()) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        // Company isolation check
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin']) && $customer->company_id !== Auth::user()->company_id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        // Haal projecten op met customer relatie (voor display in dropdown)
+        // Toon alleen projecten met ongefactureerde items
+        $projects = $customer->projects()
+            ->select('id', 'name', 'customer_id', 'status', 'monthly_fee', 'is_recurring')
+            ->where('status', '!=', 'cancelled')
+            ->where(function($q) {
+                // Projecten met ongefactureerde goedgekeurde tijd registraties
+                $q->whereHas('timeEntries', function($q2) {
+                    $q2->where('status', 'approved')
+                       ->where('is_billable', 'billable')
+                       ->where(function($q3) {
+                           $q3->whereNull('is_invoiced')
+                              ->orWhere('is_invoiced', false);
+                       });
+                })
+                // OF projecten met recurring/additional costs die nog gefactureerd moeten worden
+                ->orWhereHas('additionalCosts', function($q2) {
+                    $q2->where('is_active', true)
+                       ->where('auto_invoice', true);
+                })
+                // OF recurring projecten (die altijd factureerbaar zijn per periode)
+                ->orWhere('is_recurring', true);
+            })
+            ->orderBy('name')
+            ->get()
+            ->map(function($project) use ($customer) {
+                return [
+                    'id' => $project->id,
+                    'name' => $project->name,
+                    'status' => $project->status,
+                    'monthly_fee' => $project->monthly_fee,
+                    'customer' => [
+                        'id' => $customer->id,
+                        'name' => $customer->name
+                    ],
+                    // Display name voor dropdown: "Customer Name - Project Name"
+                    'display_name' => $customer->name . ' - ' . $project->name
+                ];
+            });
+
+        return response()->json($projects);
+    }
+
+    /**
+     * Bulk actions voor projecten binnen customer detail page
+     */
+    public function bulkActionProjects(Request $request, Customer $customer)
+    {
+        // Authorization check - alleen super_admin, admin, en project_manager kunnen bulk acties uitvoeren
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
+            abort(403, 'Access denied. Insufficient permissions to perform bulk actions on projects.');
+        }
+
+        // Company isolation check voor customer
+        // Admin mag customers zonder company_id (NULL) OF met eigen company_id bewerken
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
+            if ($customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied. You can only manage projects from customers in your own company.');
+            }
+        } elseif (Auth::user()->role === 'admin') {
+            // Admin check: blokkeer alleen als customer een andere company heeft (niet NULL en niet eigen)
+            if ($customer->company_id !== null && $customer->company_id !== Auth::user()->company_id) {
+                abort(403, 'Access denied. You can only manage projects from customers in your own company.');
+            }
+        }
+
+        // Validatie
+        $validated = $request->validate([
+            'action' => 'required|in:status_change,delete',
+            'status' => 'required_if:action,status_change|in:draft,active,on_hold,completed,cancelled',
+            'project_ids' => 'required|array|min:1',
+            'project_ids.*' => 'exists:projects,id'
+        ]);
+
+        try {
+            DB::beginTransaction();
+
+            $count = 0;
+            $action = $validated['action'];
+
+            foreach ($validated['project_ids'] as $projectId) {
+                $project = Project::find($projectId);
+
+                // Verificatie dat project bij deze customer hoort
+                if ($project && $project->customer_id == $customer->id) {
+                    // Extra company isolation check voor het project
+                    // Admin mag projecten zonder company_id (NULL) OF met eigen company_id bewerken
+                    if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
+                        if ($project->company_id !== Auth::user()->company_id) {
+                            continue; // Skip projecten die niet bij eigen company horen
+                        }
+                    } elseif (Auth::user()->role === 'admin') {
+                        // Admin check: skip alleen als project een andere company heeft (niet NULL en niet eigen)
+                        if ($project->company_id !== null && $project->company_id !== Auth::user()->company_id) {
+                            continue;
+                        }
+                    }
+
+                    // Perform action
+                    if ($action === 'status_change') {
+                        // Update project status
+                        $project->update([
+                            'status' => $validated['status'],
+                            'updated_by' => Auth::id()
+                        ]);
+                        $count++;
+                    } elseif ($action === 'delete') {
+                        // Delete project (soft delete)
+                        $project->delete();
+                        $count++;
+                    }
+                }
+            }
+
+            DB::commit();
+
+            // Success message based on action
+            if ($action === 'status_change') {
+                $statusDisplayName = ucfirst(str_replace('_', ' ', $validated['status']));
+                $message = "Successfully updated status to '{$statusDisplayName}' for {$count} project(s).";
+            } elseif ($action === 'delete') {
+                $message = "Successfully deleted {$count} project(s).";
+            }
+
+            return redirect()->back()->with('success', $message);
+
+        } catch (\Exception $e) {
+            DB::rollback();
+            \Log::error('Bulk project action failed for customer ' . $customer->id, [
+                'error' => $e->getMessage(),
+                'customer_id' => $customer->id,
+                'action' => $validated['action'] ?? null,
+                'project_ids' => $validated['project_ids'] ?? [],
+                'status' => $validated['status'] ?? null
+            ]);
+
+            return redirect()->back()->with('error', 'Error performing bulk action: ' . $e->getMessage());
+        }
+    }
+
 }

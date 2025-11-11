@@ -2,19 +2,59 @@
 
 @section('title', 'Edit Invoice - ' . ($invoice->invoice_number ?: 'DRAFT-' . $invoice->id))
 
+@push('styles')
+<!-- Handsontable - Excel-like Spreadsheet (Community Edition) -->
+<link href="https://cdn.jsdelivr.net/npm/handsontable@14.1/dist/handsontable.full.min.css" rel="stylesheet">
+
+<style>
+/* Excel view custom styling */
+#spreadsheet-container {
+    background: white;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    border: 1px solid #e5e7eb;
+}
+
+/* Handsontable container */
+.handsontable {
+    font-size: 14px;
+}
+
+/* Row styling voor line types */
+.milestone-row {
+    background-color: #EFF6FF !important; /* blue-50 */
+}
+
+.task-row {
+    background-color: #F0FDF4 !important; /* green-50 */
+}
+
+.time-entry-row {
+    background-color: #F9FAFB !important; /* gray-50 */
+}
+
+/* Read-only cells styling */
+.htDimmed {
+    background-color: #f9fafb !important;
+    color: #6b7280 !important;
+}
+</style>
+@endpush
+
 @section('content')
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-8">
-        <div class="flex items-center">
-            <a href="{{ route('invoices.show', $invoice) }}" class="text-gray-500 hover:text-gray-700 mr-4">
+<!-- Sticky Header -->
+<div class="bg-white border-b border-gray-200 sticky z-50" style="top: var(--theme-header-height); margin-left: -90px; width: calc(100vw - 8rem); height: var(--theme-header-height); min-height: var(--theme-header-height);">
+    <div class="flex items-center justify-between h-full" style="padding: 0 var(--theme-spacing-x);">
+        <div class="flex items-center gap-4">
+            <a href="{{ route('invoices.show', $invoice) }}"
+               class="text-gray-500 hover:text-gray-700 transition-colors">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
                 </svg>
             </a>
             <div>
-                <h1 class="text-3xl font-bold text-gray-900">Edit Draft Invoice</h1>
-                <p class="mt-2 text-gray-600">
+                <h1 class="text-xl font-semibold text-gray-900">Edit Draft Invoice</h1>
+                <p class="text-sm text-gray-600">
                     {{ $invoice->customer->name }}
                     @if($invoice->project)
                     • {{ $invoice->project->name }}
@@ -22,27 +62,61 @@
                 </p>
             </div>
         </div>
-        <div class="flex space-x-3">
-            <a href="{{ route('invoices.show', $invoice) }}" 
-               class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg inline-flex items-center">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div class="flex items-center gap-2">
+            <!-- Merge Selected Button (Hidden by default) -->
+            <button type="button"
+                    id="merge-selected-btn-header"
+                    onclick="mergeSelectedLines()"
+                    class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-lg inline-flex items-center text-sm transition-colors hidden">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                </svg>
+                Merge <span id="merge-count-header">0</span>
+            </button>
+
+            <!-- Spreadsheet View Button -->
+            <a href="{{ route('invoices.spreadsheet', $invoice) }}"
+               class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg inline-flex items-center text-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+                📊 Spreadsheet View
+            </a>
+
+            <!-- Defer Selected Button (Hidden by default) -->
+            <button type="button"
+                    id="defer-selected-btn"
+                    onclick="deferSelectedLines()"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg inline-flex items-center text-sm transition-colors hidden">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Defer <span id="defer-count">0</span> to Next Month
+            </button>
+
+            <a href="{{ route('invoices.show', $invoice) }}"
+               class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-3 py-1.5 rounded-lg inline-flex items-center text-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                 </svg>
-                Preview Invoice
+                Preview
             </a>
-            
+
             <button type="button"
                     onclick="if(confirm('Are you sure you want to delete this draft invoice?\n\nThis action cannot be undone.')) { document.getElementById('delete-form').submit(); }"
-                    class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg inline-flex items-center">
-                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    class="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg inline-flex items-center text-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                 </svg>
-                Delete Draft
+                Delete
             </button>
         </div>
     </div>
+</div>
 
+<!-- Main Content - Extra wide for Excel view -->
+<div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <!-- Invoice Edit Form -->
     <div class="bg-white rounded-lg shadow">
         <form action="{{ route('invoices.update', $invoice) }}" method="POST" id="invoice-edit-form" class="space-y-6">
@@ -125,13 +199,13 @@
                         <label for="project_id" class="block text-sm font-medium text-gray-700">
                             Project (Optional)
                         </label>
-                        <select name="project_id" 
-                                id="project_id" 
+                        <select name="project_id"
+                                id="project_id"
                                 class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 @error('project_id') border-red-300 @enderror">
                             <option value="">Select project (optional)</option>
                             @foreach($projects as $project)
                             <option value="{{ $project->id }}" {{ old('project_id', $invoice->project_id) == $project->id ? 'selected' : '' }}>
-                                {{ $project->name }}
+                                {{ $project->customer ? $project->customer->name . ' - ' : '' }}{{ $project->name }}
                             </option>
                             @endforeach
                         </select>
@@ -318,33 +392,202 @@
                             <span class="text-sm font-medium text-gray-900">€{{ number_format($invoice->service_amount ?? 0, 2) }}</span>
                         </div>
                         
-                        <!-- Additional Costs -->
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm text-gray-600">Additional Costs</span>
-                            <span class="text-sm font-medium text-gray-900">€{{ number_format($invoice->additional_costs ?? 0, 2) }}</span>
-                        </div>
-                        
                         <div class="border-t pt-3">
                             <div class="flex items-center justify-between">
-                                <span class="text-sm font-medium text-gray-900">Total Used</span>
+                                <span class="text-sm font-medium text-gray-900">Total Used (from Budget)</span>
                                 <span class="text-lg font-bold text-gray-900">
-                                    €{{ number_format(($invoice->work_amount ?? 0) + ($invoice->service_amount ?? 0) + ($invoice->additional_costs ?? 0), 2) }}
+                                    €{{ number_format(($invoice->work_amount ?? 0) + ($invoice->service_amount ?? 0), 2) }}
                                 </span>
+                            </div>
+                        </div>
+
+                        <!-- Additional Costs (Extra) -->
+                        <div class="flex items-center justify-between pt-2 border-t border-dashed border-gray-300">
+                            <span class="text-sm text-orange-600 font-medium">+ Additional Costs (Extra)</span>
+                            <span class="text-sm font-medium text-orange-600">€{{ number_format($invoice->additional_costs ?? 0, 2) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Costs Section -->
+            @php
+                $additionalCostLines = $invoice->lines->where('category', 'cost');
+            @endphp
+
+            @if($additionalCostLines->count() > 0)
+            <div class="px-6 py-6 border-t border-gray-200" style="background: linear-gradient(to right, #fef3c7, #fef9e7);">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-900">Additional Costs</h3>
+                        <p class="mt-1 text-sm text-gray-600">Extra costs and recurring fees for this project</p>
+                    </div>
+                    <div class="flex space-x-2">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                            In Fee = Within Budget
+                        </span>
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                            </svg>
+                            Additional = Extra Charge
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Additional Costs List -->
+                <div class="space-y-3">
+                    @foreach($additionalCostLines as $costLine)
+                    @php
+                        $additionalCost = \App\Models\ProjectAdditionalCost::find($costLine->source_id);
+                        $isInFee = !$costLine->is_billable; // in_fee = niet billable (binnen budget)
+                        $isRecurring = $additionalCost && $additionalCost->cost_type === 'monthly_recurring';
+                    @endphp
+                    <div class="bg-white rounded-lg border {{ $isInFee ? 'border-green-200' : 'border-red-200' }} p-4 hover:shadow-md transition-shadow">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <h4 class="text-sm font-medium text-gray-900">{{ $costLine->description }}</h4>
+
+                                    <!-- Fee Type Badge -->
+                                    @if($isInFee)
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        In Fee
+                                    </span>
+                                    @else
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        Additional
+                                    </span>
+                                    @endif
+
+                                    <!-- Recurring Badge -->
+                                    @if($isRecurring)
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                        <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        Recurring
+                                    </span>
+                                    @endif
+                                </div>
+
+                                @if($costLine->detailed_description)
+                                <p class="text-sm text-gray-600 mb-2">{{ $costLine->detailed_description }}</p>
+                                @endif
+
+                                <!-- Cost Details -->
+                                <div class="flex items-center gap-4 text-sm text-gray-500">
+                                    @if($additionalCost)
+                                    <span class="flex items-center">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+                                        </svg>
+                                        {{ ucfirst($additionalCost->category) }}
+                                    </span>
+                                    @if($additionalCost->vendor)
+                                    <span class="flex items-center">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                                        </svg>
+                                        {{ $additionalCost->vendor }}
+                                    </span>
+                                    @endif
+                                    @if($additionalCost->reference)
+                                    <span class="flex items-center">
+                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"></path>
+                                        </svg>
+                                        {{ $additionalCost->reference }}
+                                    </span>
+                                    @endif
+                                    @endif
+                                </div>
+                            </div>
+
+                            <!-- Amount -->
+                            <div class="text-right ml-4">
+                                <div class="text-lg font-bold {{ $isInFee ? 'text-green-600' : 'text-red-600' }}">
+                                    €{{ number_format($costLine->line_total_ex_vat, 2) }}
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    {{ $costLine->quantity }} {{ $costLine->unit }}{{ $costLine->quantity > 1 ? 's' : '' }}
+                                    @if($costLine->unit_price > 0)
+                                    @ €{{ number_format($costLine->unit_price, 2) }}
+                                    @endif
+                                </div>
+                                @if(!$isInFee)
+                                <div class="text-xs text-red-600 font-medium mt-1">
+                                    + Will be invoiced
+                                </div>
+                                @else
+                                <div class="text-xs text-green-600 font-medium mt-1">
+                                    Included in fee
+                                </div>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                    @endforeach
+                </div>
+
+                <!-- Additional Costs Summary -->
+                <div class="mt-6 bg-white rounded-lg p-4 border border-gray-200">
+                    <div class="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <div class="text-gray-600 mb-1">In Fee (Within Budget)</div>
+                            <div class="text-lg font-bold text-green-600">
+                                €{{ number_format($additionalCostLines->where('is_billable', false)->sum('line_total_ex_vat'), 2) }}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-gray-600 mb-1">Additional (Extra Charge)</div>
+                            <div class="text-lg font-bold text-red-600">
+                                €{{ number_format($additionalCostLines->where('is_billable', true)->sum('line_total_ex_vat'), 2) }}
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-gray-600 mb-1">Total Additional Costs</div>
+                            <div class="text-lg font-bold text-gray-900">
+                                €{{ number_format($additionalCostLines->sum('line_total_ex_vat'), 2) }}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
+                                (Only Additional charges are invoiced)
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+            @endif
 
             <!-- Invoice Lines Section -->
             <div class="px-6 py-6 border-t border-gray-200">
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h3 class="text-lg font-medium text-gray-900">Invoice Lines</h3>
-                        <p class="mt-1 text-sm text-gray-600">Drag to reorder, edit descriptions and amounts</p>
+                        <p class="mt-1 text-sm text-gray-600">
+                            <span id="view-mode-text">Drag to reorder, edit descriptions and amounts</span>
+                        </p>
                     </div>
                     <div class="flex space-x-3">
-                        <button type="button" 
+                        <button type="button"
+                                id="toggle-view-btn"
+                                class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center transition-all"
+                                onclick="toggleSpreadsheetView()">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            <span id="toggle-view-text">📊 Switch to Excel View</span>
+                        </button>
+                        <button type="button"
                                 id="merge-selected-lines"
                                 class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg inline-flex items-center hidden"
                                 onclick="mergeSelectedLines()">
@@ -353,7 +596,7 @@
                             </svg>
                             Merge Selected (<span id="merge-count">0</span>)
                         </button>
-                        <button type="button" 
+                        <button type="button"
                                 id="add-time-entries"
                                 class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center">
                             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -372,8 +615,13 @@
                     </div>
                 </div>
 
-                <!-- Invoice Lines Container -->
-                <div id="invoice-lines-container" class="space-y-4">
+                <!-- Excel-style Spreadsheet Container (Initially Hidden) -->
+                <div id="spreadsheet-container" class="hidden mb-6">
+                    <div id="spreadsheet"></div>
+                </div>
+
+                <!-- Invoice Lines Container (Normal View) -->
+                <div id="invoice-lines-container" class="space-y-2">
                     @forelse($invoice->lines as $line)
                     @php
                         // Determine line type based on description patterns and clean the description
@@ -440,34 +688,37 @@
                             }
                         }
                     @endphp
-                    <div class="invoice-line {{ $bgClass }} p-4 rounded-lg border {{ $borderClass }}"
+                    <div class="invoice-line {{ $bgClass }} px-3 py-2 rounded-lg border {{ $borderClass }}"
                          data-line-id="{{ $line->id }}"
                          data-line-type="{{ $lineType }}"
                          data-milestone-id="{{ $milestoneId }}"
                          data-task-id="{{ $taskId }}"
                          data-milestone-name="{{ $milestoneName }}"
                          data-task-name="{{ $taskName }}">
-                        <div class="flex items-start justify-between mb-4">
-                            <div class="flex items-center">
-                                <input type="checkbox" 
-                                       class="line-selector mr-3 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                        <div class="flex items-start justify-between mb-2">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox"
+                                       class="line-selector rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                                        data-line-id="{{ $line->id }}"
                                        onchange="updateMergeButton()">
-                                <div class="drag-handle cursor-move text-gray-400 mr-3">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <span class="text-xs text-gray-500">Merge</span>
+                                <div class="drag-handle cursor-move text-gray-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8h16M4 16h16"></path>
                                     </svg>
                                 </div>
                                 {!! $iconHtml !!}
-                                <h4 class="text-sm font-medium {{ $textClass }}">
+                                <h4 class="text-xs font-medium {{ $textClass }}">
                                     @if($lineType === 'milestone')
                                         @if($line->source_type === 'milestone_header')
                                             Milestone
                                         @else
                                             Milestone Total
+                                            <span class="ml-1 px-1.5 py-0.5 text-xs bg-green-100 text-green-600 rounded" title="Automatically calculated from task subtotals below">Auto</span>
                                         @endif
                                     @elseif($lineType === 'task')
                                         Task Subtotal
+                                        <span class="ml-1 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-600 rounded" title="Automatically calculated from time entries below">Auto</span>
                                     @elseif($lineType === 'description')
                                         Time Entry
                                     @else
@@ -478,23 +729,23 @@
                                     @endif
                                 </h4>
                             </div>
-                            <button type="button" 
+                            <button type="button"
                                     class="remove-line text-red-600 hover:text-red-800"
                                     onclick="removeLine(this)">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                                 </svg>
                             </button>
                         </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
+
+                        <div class="grid grid-cols-1 md:grid-cols-6 gap-2">
                             <!-- Description -->
                             <div class="md:col-span-2">
-                                <label class="block text-sm font-medium text-gray-700">Description</label>
-                                <input type="text" 
-                                       name="lines[{{ $line->id }}][description]" 
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Description</label>
+                                <input type="text"
+                                       name="lines[{{ $line->id }}][description]"
                                        value="{{ $cleanDescription }}"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                       class="block w-full text-sm rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 py-1"
                                        required>
                                 <input type="hidden" name="lines[{{ $line->id }}][original_description]" value="{{ $line->description }}">
                                 <input type="hidden" name="lines[{{ $line->id }}][id]" value="{{ $line->id }}">
@@ -503,85 +754,116 @@
                                 <input type="hidden" name="lines[{{ $line->id }}][source_id]" value="{{ $line->source_id }}">
                                 @endif
                             </div>
-                            
+
                             <!-- Quantity -->
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Quantity</label>
-                                <input type="number" 
-                                       name="lines[{{ $line->id }}][quantity]" 
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Qty</label>
+                                <input type="number"
+                                       name="lines[{{ $line->id }}][quantity]"
                                        value="{{ $line->quantity }}"
                                        min="0"
                                        step="0.01"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 quantity-input"
+                                       class="block w-full text-sm rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 quantity-input py-1"
                                        required>
                             </div>
-                            
+
                             <!-- Unit Price -->
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Unit Price (€)</label>
-                                <input type="number" 
-                                       name="lines[{{ $line->id }}][unit_price]" 
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Price (€)</label>
+                                <input type="number"
+                                       name="lines[{{ $line->id }}][unit_price]"
                                        value="{{ $line->unit_price }}"
                                        min="0"
                                        step="0.01"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 price-input"
+                                       class="block w-full text-sm rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 price-input py-1"
                                        required>
                             </div>
-                            
+
                             <!-- VAT Rate -->
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">VAT Rate (%)</label>
-                                <select name="lines[{{ $line->id }}][vat_rate]" 
-                                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 vat-rate-select">
-                                    <option value="21" {{ $line->vat_rate == 21 ? 'selected' : '' }}>21% (Standard NL)</option>
-                                    <option value="9" {{ $line->vat_rate == 9 ? 'selected' : '' }}>9% (Reduced NL)</option>
-                                    <option value="0" {{ $line->vat_rate == 0 ? 'selected' : '' }}>0% (Export/Exempt)</option>
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">VAT %</label>
+                                <select name="lines[{{ $line->id }}][vat_rate]"
+                                        class="block w-full text-sm rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 vat-rate-select py-1">
+                                    <option value="21" {{ $line->vat_rate == 21 ? 'selected' : '' }}>21%</option>
+                                    <option value="9" {{ $line->vat_rate == 9 ? 'selected' : '' }}>9%</option>
+                                    <option value="0" {{ $line->vat_rate == 0 ? 'selected' : '' }}>0%</option>
                                 </select>
                             </div>
-                            
+
                             <!-- Line Total -->
                             <div>
-                                <label class="block text-sm font-medium text-gray-700">Line Total</label>
-                                <div class="mt-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium text-gray-900 line-total">
+                                <label class="block text-xs font-medium text-gray-600 mb-0.5">Total</label>
+                                <div class="px-2 py-1 bg-gray-100 border border-gray-300 rounded-md text-sm font-medium text-gray-900 line-total">
                                     €{{ number_format($line->line_total_ex_vat ?? 0, 2) }}
                                 </div>
                             </div>
                         </div>
                         
-                        <!-- Defer to Next Month Option -->
-                        <div class="mt-3 flex items-center justify-between">
-                            <div class="flex items-center">
-                                {{-- Hidden input ensures unchecked checkboxes send a value --}}
+                        <!-- Defer to Next Month Option (Only for Recurring Projects) -->
+                        @php
+                            $isRecurringProject = in_array($invoice->project->billing_frequency ?? 'manual', ['monthly', 'quarterly']);
+                            $deferMetadata = $line->metadata ? json_decode($line->metadata, true) : [];
+                            $deferHistory = $deferMetadata['defer_history'] ?? [];
+
+                            // KRITIEK: Ondersteun beide formaten (object en array)
+                            $timesDeferred = 0;
+                            $originalPeriod = null;
+                            $lastDeferredFrom = null;
+
+                            if (!empty($deferHistory)) {
+                                // Check of het een object is (oud formaat met from_period string)
+                                if (isset($deferHistory['from_period'])) {
+                                    // Object formaat: {"from_invoice_number": "...", "from_period": "Aug 2025"}
+                                    $timesDeferred = 1;
+                                    $originalPeriod = $deferHistory['from_period'] ?? null;
+                                    $lastDeferredFrom = $deferHistory['from_period'] ?? null;
+                                }
+                                // Of een array van defer events (nieuw formaat)
+                                elseif (is_array($deferHistory) && isset($deferHistory[0])) {
+                                    $deferHistory = array_values($deferHistory);
+                                    $timesDeferred = count($deferHistory);
+                                    $originalPeriod = isset($deferHistory[0]['from_period_start'])
+                                        ? \Carbon\Carbon::parse($deferHistory[0]['from_period_start'])->format('M Y')
+                                        : null;
+                                    $lastEntry = $deferHistory[count($deferHistory) - 1];
+                                    $lastDeferredFrom = isset($lastEntry['from_period_start'])
+                                        ? \Carbon\Carbon::parse($lastEntry['from_period_start'])->format('M Y')
+                                        : null;
+                                }
+                            }
+                        @endphp
+
+                        @if($isRecurringProject || ($line->source_type === 'time_entry' && $line->timeEntry))
+                        <div class="mt-2 flex items-center justify-between text-xs gap-2">
+                            <!-- Defer Checkbox (Recurring Projects) -->
+                            @if($isRecurringProject)
+                            <div class="flex items-center gap-2">
                                 <input type="hidden" name="lines[{{ $line->id }}][defer_to_next_month]" value="0">
                                 <input type="checkbox"
                                        name="lines[{{ $line->id }}][defer_to_next_month]"
                                        id="defer_{{ $line->id }}"
                                        value="1"
                                        {{ $line->defer_to_next_month ? 'checked' : '' }}
-                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
-                                <label for="defer_{{ $line->id }}" class="ml-2 text-sm text-gray-700">
-                                    Defer to next month
+                                       class="defer-checkbox h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                       onchange="updateDeferButton()">
+                                <label for="defer_{{ $line->id }}" class="text-gray-700">
+                                    Defer to {{ \Carbon\Carbon::parse($invoice->period_start)->copy()->addMonth()->format('M Y') }}
                                 </label>
+                                @if($timesDeferred > 0)
+                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-orange-100 text-orange-700">
+                                    Deferred {{ $timesDeferred }}x
+                                </span>
+                                @endif
                             </div>
-                            
-                            @if($line->defer_to_next_month)
-                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                                <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                Deferred
-                            </span>
                             @endif
-                        </div>
-                        
-                        @if($line->source_type === 'time_entry' && $line->timeEntry)
-                        <div class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                            <div class="flex items-center text-sm text-blue-800">
-                                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <span>Time Entry: {{ $line->timeEntry->date->format('M j, Y') }} • {{ $line->timeEntry->user->name }} • {{ $line->timeEntry->hours }}h</span>
+
+                            <!-- Time Entry Info -->
+                            @if($line->source_type === 'time_entry' && $line->timeEntry)
+                            <div class="text-gray-600">
+                                <i class="far fa-clock"></i>
+                                {{ $line->timeEntry->date->format('M j') }} • {{ $line->timeEntry->user->name }} • {{ $line->timeEntry->hours }}h
                             </div>
+                            @endif
                         </div>
                         @endif
                     </div>
@@ -719,16 +1001,26 @@
             </div>
             
             <!-- Time Entry Filters -->
-            <div class="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input type="date" 
-                       id="time-entry-start" 
-                       placeholder="Start Date" 
+            <div class="mb-4 grid grid-cols-1 md:grid-cols-4 gap-4">
+                <select id="time-entry-customer-filter"
+                        class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        onchange="filterProjectsByCustomer()">
+                    <option value="">All Customers</option>
+                    @foreach($customers as $customer)
+                    <option value="{{ $customer->id }}" {{ $customer->id == $invoice->customer_id ? 'selected' : '' }}>
+                        {{ $customer->name }}
+                    </option>
+                    @endforeach
+                </select>
+                <input type="date"
+                       id="time-entry-start"
+                       placeholder="Start Date"
                        class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <input type="date" 
-                       id="time-entry-end" 
-                       placeholder="End Date" 
+                <input type="date"
+                       id="time-entry-end"
+                       placeholder="End Date"
                        class="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                <button type="button" 
+                <button type="button"
                         id="load-available-entries"
                         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
                     Load Entries
@@ -852,13 +1144,192 @@
     </div>
 </template>
 
+</div>
+{{-- End Main Content Container --}}
+
+<!-- Load Handsontable - Excel-like Spreadsheet -->
+<script src="https://cdn.jsdelivr.net/npm/handsontable@14.1/dist/handsontable.full.min.js"></script>
+
+<script>
+// Debug: Check if Handsontable is loaded
+console.log('Handsontable loaded:', typeof Handsontable !== 'undefined');
+</script>
+
 @endsection
 
 @push('scripts')
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+
 <script>
-// Global variables and functions for merge functionality
+// Global variables
 let sortable;
+let hotInstance = null;
+let isExcelView = false;
+
+// ============================================
+// EXCEL SPREADSHEET FUNCTIONALITY - Handsontable
+// ============================================
+
+/**
+ * Toggle between Normal and Excel view
+ */
+function toggleSpreadsheetView() {
+    const normalView = document.getElementById('invoice-lines-container');
+    const excelView = document.getElementById('spreadsheet-container');
+    const toggleBtn = document.getElementById('toggle-view-btn');
+    const toggleText = document.getElementById('toggle-view-text');
+    const viewModeText = document.getElementById('view-mode-text');
+
+    if (!isExcelView) {
+        // Switch TO Excel view
+        syncNormalToExcel();
+        normalView.classList.add('hidden');
+        excelView.classList.remove('hidden');
+        toggleText.textContent = '📋 Switch to Normal View';
+        viewModeText.textContent = 'Excel-style editing with keyboard navigation';
+        isExcelView = true;
+    } else {
+        // Switch TO Normal view
+        syncExcelToNormal();
+        excelView.classList.add('hidden');
+        normalView.classList.remove('hidden');
+        toggleText.textContent = '📊 Switch to Excel View';
+        viewModeText.textContent = 'Drag to reorder, edit descriptions and amounts';
+        isExcelView = false;
+    }
+}
+
+/**
+ * Initialize Handsontable spreadsheet from Normal view data
+ */
+function syncNormalToExcel() {
+    // Check if Handsontable is loaded
+    if (typeof Handsontable === 'undefined') {
+        console.error('Handsontable library is not loaded!');
+        alert('Excel view library is not loaded. Please refresh the page and try again.');
+        return;
+    }
+
+    // Collect data from normal view
+    const lines = [];
+    const lineElements = document.querySelectorAll('#invoice-lines-container .invoice-line');
+
+    lineElements.forEach((lineEl) => {
+        const lineId = lineEl.dataset.lineId;
+        const lineType = lineEl.dataset.lineType || 'normal';
+
+        // Get input values
+        const descriptionInput = lineEl.querySelector(`input[name="lines[${lineId}][description]"]`);
+        const quantityInput = lineEl.querySelector(`input[name="lines[${lineId}][quantity]"]`);
+        const priceInput = lineEl.querySelector(`input[name="lines[${lineId}][unit_price]"]`);
+
+        if (!descriptionInput) return;
+
+        const quantity = parseFloat(quantityInput?.value || 0);
+        const price = parseFloat(priceInput?.value || 0);
+        const total = quantity * price;
+
+        lines.push({
+            id: lineId,
+            type: lineType,
+            description: descriptionInput.value,
+            quantity: quantity,
+            price: price,
+            total: total
+        });
+    });
+
+    // Initialize or update Handsontable
+    if (!hotInstance) {
+        initializeHandsontable(lines);
+    } else {
+        hotInstance.loadData(lines);
+    }
+}
+
+/**
+ * Sync data FROM Excel view back TO Normal view
+ */
+function syncExcelToNormal() {
+    if (!hotInstance) return;
+
+    const data = hotInstance.getSourceData(); // Get data as objects
+
+    // Update normal view inputs with spreadsheet data
+    data.forEach((row) => {
+        const lineId = row.id;
+        const lineEl = document.querySelector(`#invoice-lines-container .invoice-line[data-line-id="${lineId}"]`);
+        if (!lineEl) return;
+
+        // Update input values
+        const descriptionInput = lineEl.querySelector(`input[name="lines[${lineId}][description]"]`);
+        const quantityInput = lineEl.querySelector(`input[name="lines[${lineId}][quantity]"]`);
+        const priceInput = lineEl.querySelector(`input[name="lines[${lineId}][unit_price]"]`);
+
+        if (descriptionInput) descriptionInput.value = row.description || '';
+        if (quantityInput) quantityInput.value = row.quantity || 0;
+        if (priceInput) priceInput.value = row.price || 0;
+
+        // Trigger recalculation of totals in normal view
+        if (quantityInput && priceInput) {
+            const total = (parseFloat(quantityInput.value) || 0) * (parseFloat(priceInput.value) || 0);
+            const lineTotalEl = lineEl.querySelector('.line-total');
+            if (lineTotalEl) lineTotalEl.textContent = '€' + total.toFixed(2);
+        }
+    });
+
+    // Recalculate invoice totals
+    calculateTotals();
+}
+
+/**
+ * Initialize Handsontable with data
+ */
+function initializeHandsontable(lines) {
+    const container = document.getElementById('spreadsheet');
+
+    hotInstance = new Handsontable(container, {
+        data: lines,
+        colHeaders: ['ID', 'Type', 'Description', 'Qty', 'Price (€)', 'Total (€)'],
+        columns: [
+            { data: 'id', readOnly: true }, // ID - hidden
+            { data: 'type', readOnly: true }, // Type - hidden
+            { data: 'description', type: 'text' }, // Description
+            { data: 'quantity', type: 'numeric', numericFormat: { pattern: '0.00' } }, // Qty
+            { data: 'price', type: 'numeric', numericFormat: { pattern: '0.00' } }, // Price
+            { data: 'total', type: 'numeric', numericFormat: { pattern: '0.00' }, readOnly: true } // Total
+        ],
+        colWidths: [0, 0, 400, 100, 120, 120], // First 2 columns width 0 (hidden), more space for description
+        hiddenColumns: {
+            columns: [0, 1] // Hide ID and Type columns
+        },
+        width: '100%',
+        height: 600,
+        licenseKey: 'non-commercial-and-evaluation',
+
+        // Auto-calculate total when Qty or Price changes
+        afterChange: function(changes, source) {
+            if (!changes || source === 'loadData' || source === 'auto-calculation') return;
+
+            changes.forEach(([row, prop, oldValue, newValue]) => {
+                // If quantity or price changed, recalculate total
+                if (prop === 'quantity' || prop === 'price') {
+                    const qty = parseFloat(hotInstance.getDataAtRowProp(row, 'quantity')) || 0;
+                    const price = parseFloat(hotInstance.getDataAtRowProp(row, 'price')) || 0;
+                    const total = qty * price;
+                    hotInstance.setDataAtRowProp(row, 'total', total.toFixed(2), 'auto-calculation');
+                }
+            });
+        }
+    });
+}
+
+// ============================================
+// END EXCEL SPREADSHEET FUNCTIONALITY
+// ============================================
+
+// Global variables and functions for merge functionality (existing code)
+// let sortable; // Already declared above
 
 function initializeSortable() {
     const container = document.getElementById('invoice-lines-container');
@@ -870,13 +1341,244 @@ function initializeSortable() {
         animation: 150,
         handle: '.drag-handle',
         ghostClass: 'sortable-ghost',
+
+        // Validate move - prevent time entries from moving to different tasks
+        onMove: function(evt) {
+            const draggedElement = evt.dragged;
+            const relatedElement = evt.related;
+
+            const draggedType = draggedElement.dataset.lineType;
+            const draggedTaskId = draggedElement.dataset.taskId;
+            const draggedMilestoneId = draggedElement.dataset.milestoneId;
+
+            const relatedType = relatedElement.dataset.lineType;
+            const relatedTaskId = relatedElement.dataset.taskId;
+            const relatedMilestoneId = relatedElement.dataset.milestoneId;
+
+            // If dragging a time entry (description)
+            if (draggedType === 'description') {
+                // Only allow moving within the same task
+                // Can place before/after other descriptions or the task subtotal itself
+                if (relatedType === 'task') {
+                    // Placing near the task subtotal - only if it's the same task
+                    return (relatedTaskId === draggedTaskId && relatedMilestoneId === draggedMilestoneId);
+                } else if (relatedType === 'description') {
+                    // Placing near another description - must be same task
+                    return (relatedTaskId === draggedTaskId && relatedMilestoneId === draggedMilestoneId);
+                } else {
+                    // Don't allow placing near milestones or other types
+                    return false;
+                }
+            }
+
+            // If dragging a task subtotal
+            if (draggedType === 'task') {
+                // Tasks can NOT be placed between time entries of another task
+                if (relatedType === 'description') {
+                    // Don't allow placing near time entries
+                    return false;
+                }
+                // Tasks CAN be placed near other tasks or milestones
+                return true;
+            }
+
+            // If dragging a milestone total
+            if (draggedType === 'milestone') {
+                // Milestones can NOT be placed between tasks or time entries
+                if (relatedType === 'task' || relatedType === 'description') {
+                    // Don't allow placing near tasks or time entries
+                    return false;
+                }
+                // Milestones CAN be placed near other milestones
+                return true;
+            }
+
+            // Allow all other moves
+            return true;
+        },
+
         onEnd: function(evt) {
+            const movedElement = evt.item;
+            const movedType = movedElement.dataset.lineType;
+
+            // If a task was moved, move all its time entries with it
+            if (movedType === 'task') {
+                const taskId = movedElement.dataset.taskId;
+                const milestoneId = movedElement.dataset.milestoneId;
+
+                // Find all time entries that belong to this task
+                const timeEntries = Array.from(document.querySelectorAll('.invoice-line[data-line-type="description"]'))
+                    .filter(line => line.dataset.taskId === taskId && line.dataset.milestoneId === milestoneId);
+
+                // Move each time entry right after the task
+                let insertAfter = movedElement;
+                timeEntries.forEach(timeEntry => {
+                    // Insert this time entry after the previous element
+                    insertAfter.insertAdjacentElement('afterend', timeEntry);
+                    insertAfter = timeEntry;
+                });
+            }
+
+            // If a milestone was moved, move all its tasks and time entries with it
+            if (movedType === 'milestone') {
+                const milestoneId = movedElement.dataset.milestoneId;
+
+                // Find all tasks that belong to this milestone
+                const tasks = Array.from(document.querySelectorAll('.invoice-line[data-line-type="task"]'))
+                    .filter(line => line.dataset.milestoneId === milestoneId);
+
+                let insertAfter = movedElement;
+
+                // Move each task with its time entries
+                tasks.forEach(task => {
+                    const taskId = task.dataset.taskId;
+
+                    // Insert task
+                    insertAfter.insertAdjacentElement('afterend', task);
+                    insertAfter = task;
+
+                    // Find and insert all time entries for this task
+                    const timeEntries = Array.from(document.querySelectorAll('.invoice-line[data-line-type="description"]'))
+                        .filter(line => line.dataset.taskId === taskId && line.dataset.milestoneId === milestoneId);
+
+                    timeEntries.forEach(timeEntry => {
+                        insertAfter.insertAdjacentElement('afterend', timeEntry);
+                        insertAfter = timeEntry;
+                    });
+                });
+            }
+
             calculateTotals();
         }
     });
 }
 
+// Recalculate task subtotals based on time entries
+function recalculateTaskSubtotals() {
+    // Find all task subtotal lines
+    document.querySelectorAll('.invoice-line[data-line-type="task"]').forEach(taskLine => {
+        const taskId = taskLine.dataset.taskId;
+        const milestoneId = taskLine.dataset.milestoneId;
+
+        let taskTotal = 0;
+        let taskQuantity = 0;
+        let maxVatRate = 0;
+
+        // Find all time entry lines that belong to this task
+        document.querySelectorAll('.invoice-line[data-line-type="description"]').forEach(timeEntryLine => {
+            // Check if this time entry belongs to this task
+            if (timeEntryLine.dataset.taskId === taskId &&
+                timeEntryLine.dataset.milestoneId === milestoneId) {
+
+                // Check if this line is deferred - skip if it is
+                const deferCheckbox = timeEntryLine.querySelector('.defer-checkbox');
+                if (deferCheckbox && deferCheckbox.checked) {
+                    return; // Skip deferred lines
+                }
+
+                const quantity = parseFloat(timeEntryLine.querySelector('.quantity-input').value) || 0;
+                const price = parseFloat(timeEntryLine.querySelector('.price-input').value) || 0;
+                const vatRate = parseFloat(timeEntryLine.querySelector('.vat-rate-select').value) || 0;
+
+                taskQuantity += quantity;
+                taskTotal += (quantity * price);
+
+                // Track highest VAT rate
+                if (vatRate > maxVatRate) {
+                    maxVatRate = vatRate;
+                }
+            }
+        });
+
+        // Update task subtotal inputs
+        const taskQuantityInput = taskLine.querySelector('.quantity-input');
+        const taskPriceInput = taskLine.querySelector('.price-input');
+        const taskVatSelect = taskLine.querySelector('.vat-rate-select');
+        const taskTotalDisplay = taskLine.querySelector('.line-total');
+
+        if (taskQuantityInput && taskPriceInput) {
+            // Set quantity to total hours
+            taskQuantityInput.value = taskQuantity.toFixed(2);
+
+            // Calculate average hourly rate
+            const avgRate = taskQuantity > 0 ? (taskTotal / taskQuantity) : 0;
+            taskPriceInput.value = avgRate.toFixed(2);
+
+            // Set VAT rate to highest rate found
+            if (taskVatSelect) {
+                taskVatSelect.value = maxVatRate;
+            }
+
+            // Update total display
+            if (taskTotalDisplay) {
+                taskTotalDisplay.textContent = `€${taskTotal.toFixed(2)}`;
+            }
+        }
+    });
+}
+
+// Recalculate milestone totals based on task subtotals
+function recalculateMilestoneTotals() {
+    // Find all milestone total lines
+    document.querySelectorAll('.invoice-line[data-line-type="milestone"]').forEach(milestoneLine => {
+        const milestoneId = milestoneLine.dataset.milestoneId;
+
+        let milestoneTotal = 0;
+        let milestoneQuantity = 0;
+        let maxVatRate = 0;
+
+        // Find all task subtotal lines that belong to this milestone
+        document.querySelectorAll('.invoice-line[data-line-type="task"]').forEach(taskLine => {
+            // Check if this task belongs to this milestone
+            if (taskLine.dataset.milestoneId === milestoneId) {
+                const quantity = parseFloat(taskLine.querySelector('.quantity-input').value) || 0;
+                const price = parseFloat(taskLine.querySelector('.price-input').value) || 0;
+                const vatRate = parseFloat(taskLine.querySelector('.vat-rate-select').value) || 0;
+
+                milestoneQuantity += quantity;
+                milestoneTotal += (quantity * price);
+
+                // Track highest VAT rate
+                if (vatRate > maxVatRate) {
+                    maxVatRate = vatRate;
+                }
+            }
+        });
+
+        // Update milestone total inputs
+        const milestoneQuantityInput = milestoneLine.querySelector('.quantity-input');
+        const milestonePriceInput = milestoneLine.querySelector('.price-input');
+        const milestoneVatSelect = milestoneLine.querySelector('.vat-rate-select');
+        const milestoneTotalDisplay = milestoneLine.querySelector('.line-total');
+
+        if (milestoneQuantityInput && milestonePriceInput) {
+            // Set quantity to total hours
+            milestoneQuantityInput.value = milestoneQuantity.toFixed(2);
+
+            // Calculate average hourly rate
+            const avgRate = milestoneQuantity > 0 ? (milestoneTotal / milestoneQuantity) : 0;
+            milestonePriceInput.value = avgRate.toFixed(2);
+
+            // Set VAT rate to highest rate found
+            if (milestoneVatSelect) {
+                milestoneVatSelect.value = maxVatRate;
+            }
+
+            // Update total display
+            if (milestoneTotalDisplay) {
+                milestoneTotalDisplay.textContent = `€${milestoneTotal.toFixed(2)}`;
+            }
+        }
+    });
+}
+
 function calculateTotals() {
+    // First, recalculate task subtotals from time entries
+    recalculateTaskSubtotals();
+
+    // Then, recalculate milestone totals from task subtotals
+    recalculateMilestoneTotals();
+
     let subtotal = 0;
     let vatAmount = 0;
 
@@ -939,22 +1641,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Load available time entries
     document.getElementById('load-available-entries').addEventListener('click', function() {
-        const customerId = document.getElementById('customer_id').value;
+        // Use the modal's customer filter if selected, otherwise use invoice customer
+        const modalCustomerId = document.getElementById('time-entry-customer-filter').value;
+        const invoiceCustomerId = document.getElementById('customer_id').value;
+        const customerId = modalCustomerId || invoiceCustomerId;
+
         const projectId = document.getElementById('project_id').value;
         const startDate = document.getElementById('time-entry-start').value;
         const endDate = document.getElementById('time-entry-end').value;
-        
+
         if (!customerId) {
             alert('Customer is required to load time entries.');
             return;
         }
-        
+
         const params = new URLSearchParams({
             customer_id: customerId,
             status: 'approved',
             uninvoiced: 'true'
         });
-        
+
         if (projectId) params.append('project_id', projectId);
         if (startDate) params.append('start_date', startDate);
         if (endDate) params.append('end_date', endDate);
@@ -1046,11 +1752,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Calculate initial totals
     calculateTotals();
+
+    // Update defer button visibility on page load
+    updateDeferButton();
 });
 
 // Modal functions
 function closeTimeEntriesModal() {
     document.getElementById('timeEntriesModal').classList.add('hidden');
+}
+
+function filterProjectsByCustomer() {
+    // Clear the currently loaded entries when customer filter changes
+    const container = document.getElementById('available-time-entries');
+    const selectedCustomer = document.getElementById('time-entry-customer-filter').value;
+
+    if (selectedCustomer) {
+        // Show message to reload with selected customer
+        const customerName = document.getElementById('time-entry-customer-filter').selectedOptions[0].text;
+        container.innerHTML = `<div class="text-center py-8 text-gray-500">Customer filter changed to "${customerName}".<br>Click "Load Entries" to view time entries for this customer.</div>`;
+    } else {
+        // Show default message for "All Customers"
+        container.innerHTML = '<div class="text-center py-8 text-gray-500">Set date range and click "Load Entries" to view available time entries</div>';
+    }
 }
 
 function addSelectedTimeEntries() {
@@ -1194,14 +1918,63 @@ function removeSelectedLines() {
 function updateMergeButton() {
     const selectedLines = document.querySelectorAll('.line-selector:checked');
     const mergeButton = document.getElementById('merge-selected-lines');
+    const mergeButtonHeader = document.getElementById('merge-selected-btn-header');
     const mergeCount = document.getElementById('merge-count');
-    
-    if (selectedLines.length >= 2) {
+    const mergeCountHeader = document.getElementById('merge-count-header');
+
+    // Update merge buttons (requires at least 1 line)
+    if (selectedLines.length >= 1) {
         mergeButton.classList.remove('hidden');
+        mergeButtonHeader.classList.remove('hidden');
         mergeCount.textContent = selectedLines.length;
+        mergeCountHeader.textContent = selectedLines.length;
     } else {
         mergeButton.classList.add('hidden');
+        mergeButtonHeader.classList.add('hidden');
     }
+}
+
+// Update defer button visibility and count
+function updateDeferButton() {
+    const deferredLines = document.querySelectorAll('.defer-checkbox:checked');
+    const deferButton = document.getElementById('defer-selected-btn');
+    const deferCount = document.getElementById('defer-count');
+
+    // Update defer button (requires at least 1 deferred line)
+    if (deferredLines.length >= 1) {
+        deferButton.classList.remove('hidden');
+        deferCount.textContent = deferredLines.length;
+    } else {
+        deferButton.classList.add('hidden');
+    }
+
+    // Recalculate task subtotals when defer checkbox changes
+    recalculateTaskSubtotals();
+    calculateTotals();
+}
+
+// Execute defer action for selected lines
+function deferSelectedLines() {
+    const deferredCheckboxes = document.querySelectorAll('.defer-checkbox:checked');
+
+    if (deferredCheckboxes.length < 1) {
+        alert('No lines are marked for deferral.\n\nPlease check the "Defer to next month" checkbox for the lines you want to defer.');
+        return;
+    }
+
+    // Get period for confirmation
+    const periodStart = '{{ $invoice->period_start }}';
+    const nextMonth = new Date(periodStart);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    const nextMonthFormatted = nextMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+    // Confirm action
+    if (!confirm(`Execute deferral for ${deferredCheckboxes.length} line(s) to ${nextMonthFormatted}?\n\nThis will save the invoice with these lines marked for next month.\n\nThe deferred lines will be removed from this invoice when you save.`)) {
+        return;
+    }
+
+    // Submit the form to save the invoice with defer flags
+    document.getElementById('invoice-edit-form').submit();
 }
 
 // Merge selected lines

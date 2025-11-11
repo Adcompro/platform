@@ -282,11 +282,26 @@
             @csrf
             <div class="p-4 space-y-4">
                 <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Customer</label>
+                    <select id="customer_filter" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" onchange="filterProjectsByCustomerInModal()">
+                        <option value="">All Customers</option>
+                        @foreach($customers ?? [] as $customer)
+                            <option value="{{ $customer->id }}">{{ $customer->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div>
                     <label class="block text-sm font-medium text-slate-700 mb-1">Project <span class="text-red-500">*</span></label>
-                    <select name="project_id" id="project_id" required class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-500">
+                    <select name="project_id" id="project_id" required class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-slate-500" onchange="updatePeriodDates()">
                         <option value="">Select Project</option>
                         @foreach($projects ?? [] as $project)
-                            <option value="{{ $project->id }}">{{ $project->name }}</option>
+                            <option value="{{ $project->id }}"
+                                    data-customer-id="{{ $project->customer_id }}"
+                                    data-start-date="{{ $project->start_date ? $project->start_date->format('Y-m-d') : '' }}"
+                                    data-end-date="{{ $project->end_date ? $project->end_date->format('Y-m-d') : '' }}">
+                                {{ $project->customer ? $project->customer->name . ' - ' : '' }}{{ $project->name }}
+                            </option>
                         @endforeach
                     </select>
                 </div>
@@ -333,6 +348,68 @@ function openGenerateModal() {
 function closeGenerateModal() {
     document.getElementById('generateModal').classList.add('hidden');
     document.getElementById('generateError').classList.add('hidden');
+}
+
+function filterProjectsByCustomerInModal() {
+    const customerFilter = document.getElementById('customer_filter');
+    const projectSelect = document.getElementById('project_id');
+    const selectedCustomerId = customerFilter.value;
+
+    // Get all project options (excluding the "Select Project" placeholder)
+    const options = projectSelect.querySelectorAll('option');
+
+    // Reset project selection when filter changes
+    projectSelect.value = '';
+
+    // Show/hide options based on customer filter
+    options.forEach(option => {
+        // Skip the placeholder option
+        if (option.value === '') {
+            return;
+        }
+
+        const projectCustomerId = option.getAttribute('data-customer-id');
+
+        // Show all projects if "All Customers" is selected
+        if (selectedCustomerId === '') {
+            option.style.display = '';
+        }
+        // Show only projects that match the selected customer
+        else if (projectCustomerId === selectedCustomerId) {
+            option.style.display = '';
+        }
+        // Hide projects that don't match
+        else {
+            option.style.display = 'none';
+        }
+    });
+}
+
+// Update period dates based on selected project
+function updatePeriodDates() {
+    const projectSelect = document.getElementById('project_id');
+    const periodStartInput = document.getElementById('period_start');
+    const periodEndInput = document.getElementById('period_end');
+
+    if (projectSelect.value) {
+        const selectedOption = projectSelect.options[projectSelect.selectedIndex];
+        const startDate = selectedOption.getAttribute('data-start-date');
+        const endDate = selectedOption.getAttribute('data-end-date');
+
+        // Update period start if project has a start date
+        if (startDate) {
+            periodStartInput.value = startDate;
+        }
+
+        // Update period end if project has an end date
+        if (endDate) {
+            periodEndInput.value = endDate;
+        }
+    } else {
+        // Reset to default values when no project selected
+        periodStartInput.value = '{{ now()->startOfMonth()->format('Y-m-d') }}';
+        periodEndInput.value = '{{ now()->endOfMonth()->format('Y-m-d') }}';
+    }
 }
 
 // Form submission handler

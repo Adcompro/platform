@@ -6,6 +6,7 @@ use App\Models\Project;
 use App\Models\ProjectMilestone;
 use App\Models\ProjectTask;
 use App\Models\ProjectSubtask;
+use App\Models\ProjectAdditionalCost;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -248,6 +249,9 @@ class RecurringProjectService
             // Kopieer milestones met tasks en subtasks
             $this->duplicateMilestones($masterProject, $newProject);
 
+            // Kopieer recurring additional costs
+            $this->duplicateRecurringAdditionalCosts($masterProject, $newProject);
+
             DB::commit();
 
             Log::info('Successfully duplicated recurring project', [
@@ -363,5 +367,90 @@ class RecurringProjectService
             'target_project_id' => $target->id,
             'milestones_count' => $milestones->count()
         ]);
+    }
+
+    /**
+     * Kopieer recurring additional costs naar nieuw project
+     * Alleen monthly_recurring costs worden gekopieerd, one-time costs blijven in origineel project
+     */
+    protected function duplicateRecurringAdditionalCosts(Project $source, Project $target): void
+    {
+        // Haal ALLEEN recurring costs op (niet one-time!)
+        $recurringCosts = $source->additionalCosts()
+            ->where('cost_type', 'monthly_recurring')
+            ->where('is_active', true)
+            ->get();
+
+        $copiedCount = 0;
+        $skippedCount = 0;
+
+        foreach ($recurringCosts as $cost) {
+            // Check of deze cost actief moet zijn in de nieuwe periode
+            if (!$this->shouldCopyCostToNewPeriod($cost, $target)) {
+                $skippedCount++;
+                Log::info('Skipping cost - end date passed', [
+                    'cost_name' => $cost->name,
+                    'end_date' => $cost->end_date,
+                    'new_project_start' => $target->start_date
+                ]);
+                continue;
+            }
+
+            // Maak kopie van de cost
+            $newCost = $cost->replicate();
+            $newCost->project_id = $target->id;
+
+            // Reset dates naar nieuwe project periode
+            $newCost->start_date = $target->start_date;
+
+            // Behoud end_date als die in de toekomst ligt
+            if ($cost->end_date && $cost->end_date->lt($target->start_date)) {
+                $newCost->end_date = null; // Cost is verlopen, maak eindeloos
+            }
+
+            // Reset monthly variations (die zijn specifiek per maand)
+            // Nieuwe project heeft eigen maanden, variations niet relevant
+            $newCost->monthly_variations = null;
+
+            $newCost->created_by = $cost->created_by;
+            $newCost->save();
+
+            $copiedCount++;
+
+            Log::info('Copied recurring cost to new project', [
+                'cost_name' => $newCost->name,
+                'source_project' => $source->id,
+                'target_project' => $target->id,
+                'calculation_type' => $newCost->calculation_type,
+                'fee_type' => $newCost->fee_type,
+                'amount' => $newCost->calculateAmount()
+            ]);
+        }
+
+        Log::info('Finished duplicating additional costs', [
+            'target_project_id' => $target->id,
+            'source_project_id' => $source->id,
+            'copied' => $copiedCount,
+            'skipped' => $skippedCount
+        ]);
+    }
+
+    /**
+     * Check of cost gekopieerd moet worden naar nieuwe periode
+     */
+    protected function shouldCopyCostToNewPeriod(ProjectAdditionalCost $cost, Project $newProject): bool
+    {
+        // Als geen end_date, altijd kopiëren
+        if (!$cost->end_date) {
+            return true;
+        }
+
+        // Als end_date in de toekomst ligt (na start van nieuw project), kopiëren
+        if ($cost->end_date->gte($newProject->start_date)) {
+            return true;
+        }
+
+        // End_date is in het verleden, niet kopiëren
+        return false;
     }
 }

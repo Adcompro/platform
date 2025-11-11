@@ -328,10 +328,10 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('customer_id').addEventListener('change', function() {
         const customerId = this.value;
         const projectSelect = document.getElementById('project_id');
-        
+
         // Clear current projects
         projectSelect.innerHTML = '<option value="">Select project (optional)</option>';
-        
+
         if (customerId) {
             // Load projects for selected customer
             fetch(`/api/customers/${customerId}/projects`)
@@ -340,9 +340,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     projects.forEach(project => {
                         const option = document.createElement('option');
                         option.value = project.id;
-                        option.textContent = project.name;
+                        // Toon "Customer Name - Project Name" voor betere overzichtelijkheid
+                        option.textContent = project.display_name || project.name;
+
+                        // Voeg status en monthly fee toe als data attributen (voor eventuele filtering later)
+                        option.setAttribute('data-status', project.status);
+                        if (project.monthly_fee) {
+                            option.setAttribute('data-monthly-fee', project.monthly_fee);
+                        }
+
                         projectSelect.appendChild(option);
                     });
+                })
+                .catch(error => {
+                    console.error('Error loading projects:', error);
+                    alert('Error loading projects. Please try again.');
                 });
         }
     });

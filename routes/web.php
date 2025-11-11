@@ -9,9 +9,8 @@ use App\Http\Controllers\ProjectSubtaskController;
 use App\Http\Controllers\TimeEntryController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\InvoiceController;
-use App\Http\Controllers\InvoiceDashboardController;
 use App\Http\Controllers\InvoiceTemplateController;
-// DISABLED (controller renamed to .bak): use App\Http\Controllers\InvoiceAITestController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\AiLearningController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\CompanyController;
@@ -26,8 +25,6 @@ use App\Http\Controllers\ProjectAdditionalCostController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\CalendarController;
 use App\Http\Controllers\MsGraphAuthController;
-use App\Http\Controllers\QuickReportsController;
-use App\Http\Controllers\ProjectIntelligenceController;
 use App\Http\Controllers\AIChatController;
 use App\Http\Controllers\AIDigestController;
 use App\Http\Controllers\ProjectMediaCampaignController;
@@ -311,33 +308,9 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // =====================================
-    // QUICK REPORTS - UITGESCHAKELD
-    // =====================================
-    /*
-    Route::prefix('reports')->group(function () {
-        Route::get('/', [QuickReportsController::class, 'index'])->name('reports.quick-reports');
-        Route::get('/weekly-timesheet', [QuickReportsController::class, 'weeklyTimesheet'])->name('reports.weekly-timesheet');
-        Route::get('/weekly-timesheet/pdf', [QuickReportsController::class, 'weeklyTimesheetPdf'])->name('reports.weekly-timesheet-pdf');
-        Route::get('/monthly-invoices', [QuickReportsController::class, 'monthlyInvoices'])->name('reports.monthly-invoices');
-        Route::get('/project-profitability', [QuickReportsController::class, 'projectProfitability'])->name('reports.project-profitability');
-        Route::get('/overdue-milestones', [QuickReportsController::class, 'overdueMilestones'])->name('reports.overdue-milestones');
-    });
-    */
-
     // =====================================
     // INVOICE SYSTEM
     // =====================================
-    // Invoice Dashboard - UITGESCHAKELD
-    // Route::get('invoices/dashboard', [InvoiceDashboardController::class, 'index'])->name('invoices.dashboard');
-    // Route::post('invoices/generate', [InvoiceDashboardController::class, 'generateInvoices'])->name('invoices.generate');
-
-    // AI INVOICE BUNDELING TEST 🤖 - DISABLED (controller renamed to .bak)
-    // Route::get('invoices/ai-test', [InvoiceAITestController::class, 'index'])->name('invoices.ai-test');
-    // Route::post('invoices/ai-test/{project}/test', [InvoiceAITestController::class, 'testSummarization'])->name('invoices.ai-test.run');
-    // Route::post('invoices/ai-test/{project}/apply', [InvoiceAITestController::class, 'applyToInvoice'])->name('invoices.ai-test.apply');
-    // Route::get('invoices/ai-test/{project}/create', [InvoiceAITestController::class, 'createDirectInvoice'])->name('invoices.ai-test.create');
-    // Route::get('invoices/quick-create/{project}', [InvoiceAITestController::class, 'quickCreate'])->name('invoices.quick-create');
-
     // BELANGRIJK: Verplaats deze resource route naar beneden na alle custom routes
     // Route::resource('invoices', InvoiceController::class);
 
@@ -445,18 +418,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('api/tasks/{task}/subtasks', [CalendarController::class, 'getTaskSubtasks']);
 
     // =====================================
-    // AI PROJECT INTELLIGENCE - UITGESCHAKELD
-    // =====================================
-    /*
-    Route::prefix('project-intelligence')->group(function () {
-        Route::get('/', [ProjectIntelligenceController::class, 'index'])->name('project-intelligence.index');
-        Route::get('/{project}', [ProjectIntelligenceController::class, 'show'])->name('project-intelligence.show');
-        Route::post('/{project}/refresh', [ProjectIntelligenceController::class, 'refresh'])->name('project-intelligence.refresh');
-        Route::get('/{project}/recommendations', [ProjectIntelligenceController::class, 'getRecommendations'])->name('project-intelligence.recommendations');
-    });
-    */
-
-    // =====================================
     // AI CHAT ASSISTANT
     // =====================================
     Route::prefix('ai-chat')->group(function () {
@@ -536,53 +497,22 @@ Route::middleware(['auth'])->group(function () {
     Route::resource('invoices', InvoiceController::class);
 
     // =====================================
+    // REPORTS MODULE 📊 (Activity Reports)
+    // =====================================
+    Route::resource('reports', ReportController::class);
+    Route::get('reports/{invoice}/spreadsheet', [ReportController::class, 'spreadsheet'])->name('reports.spreadsheet');
+    Route::get('reports/{invoice}/finalize-view', [ReportController::class, 'finalizeView'])->name('reports.finalize-view');
+    Route::get('reports/{invoice}/finalize-confirm', [ReportController::class, 'finalizeConfirm'])->name('reports.finalize-confirm');
+
+    // API endpoint for loading projects per customer
+    Route::get('api/reports/customers/{customer}/projects', [ReportController::class, 'getProjectsForCustomer'])->name('api.reports.customers.projects');
+
+    // =====================================
     // SERVICE CATALOG 🚀 MET STRUCTURE ROUTES
     // =====================================
 
     // Service Categories
 
-    // Services - UITGESCHAKELD
-    /*
-    Route::resource('services', ServiceController::class);
-    Route::post('services/{service}/duplicate', [ServiceController::class, 'duplicate'])->name('services.duplicate');
-    Route::get('services/{service}/export', [ServiceController::class, 'export'])->name('services.export');
-
-    // 🚀 SERVICE STRUCTURE ROUTE (NIEUW!)
-    Route::get('services/{service}/structure', [ServiceController::class, 'structure'])->name('services.structure');
-
-    // 🚀 SERVICE MILESTONES (NIEUW!)
-    Route::post('services/{service}/milestones', [ServiceMilestoneController::class, 'store'])->name('services.milestones.store');
-    Route::resource('services.milestones', ServiceMilestoneController::class)->except(['index', 'store']);
-    Route::get('services/{service}/milestones', [ServiceMilestoneController::class, 'index'])->name('services.milestones.index');
-    Route::post('services/{service}/milestones/reorder', [ServiceMilestoneController::class, 'reorder'])->name('services.milestones.reorder');
-
-    // Direct milestone routes for AJAX
-    Route::get('service-milestones/{milestone}/edit', [ServiceMilestoneController::class, 'ajaxEdit'])->name('service-milestones.ajax-edit');
-    Route::put('service-milestones/{milestone}', [ServiceMilestoneController::class, 'ajaxUpdate'])->name('service-milestones.ajax-update');
-    Route::delete('service-milestones/{milestone}', [ServiceMilestoneController::class, 'ajaxDestroy'])->name('service-milestones.ajax-destroy');
-
-    // 🚀 SERVICE TASKS (NIEUW!)
-    Route::post('services/{service}/milestones/{milestone}/tasks', [ServiceTaskController::class, 'store'])->name('services.milestones.tasks.store');
-    Route::resource('service-milestones.tasks', ServiceTaskController::class)->except(['index', 'store']);
-    Route::get('service-milestones/{serviceMilestone}/tasks', [ServiceTaskController::class, 'index'])->name('service-milestones.tasks.index');
-    Route::post('service-milestones/{serviceMilestone}/tasks/reorder', [ServiceTaskController::class, 'reorder'])->name('service-milestones.tasks.reorder');
-
-    // Direct task routes for AJAX
-    Route::get('service-tasks/{task}/edit', [ServiceTaskController::class, 'ajaxEdit'])->name('service-tasks.ajax-edit');
-    Route::put('service-tasks/{task}', [ServiceTaskController::class, 'ajaxUpdate'])->name('service-tasks.ajax-update');
-    Route::delete('service-tasks/{task}', [ServiceTaskController::class, 'ajaxDestroy'])->name('service-tasks.ajax-destroy');
-
-    // 🚀 SERVICE SUBTASKS (NIEUW!)
-    Route::post('services/tasks/{task}/subtasks', [ServiceSubtaskController::class, 'store'])->name('services.tasks.subtasks.store');
-    Route::resource('service-tasks.subtasks', ServiceSubtaskController::class)->except(['index', 'store']);
-    Route::get('service-tasks/{serviceTask}/subtasks', [ServiceSubtaskController::class, 'index'])->name('service-tasks.subtasks.index');
-    Route::post('service-tasks/{serviceTask}/subtasks/reorder', [ServiceSubtaskController::class, 'reorder'])->name('service-tasks.subtasks.reorder');
-
-    // Direct subtask routes for AJAX
-    Route::get('service-subtasks/{subtask}/edit', [ServiceSubtaskController::class, 'ajaxEdit'])->name('service-subtasks.ajax-edit');
-    Route::put('service-subtasks/{subtask}', [ServiceSubtaskController::class, 'ajaxUpdate'])->name('service-subtasks.ajax-update');
-    Route::delete('service-subtasks/{subtask}', [ServiceSubtaskController::class, 'ajaxDestroy'])->name('service-subtasks.ajax-destroy');
-    */
 });
 
 // =====================================

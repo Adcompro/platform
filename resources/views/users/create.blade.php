@@ -227,7 +227,7 @@
                             <label class="block font-medium mb-2" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">Time Entry Approval</label>
                             <div class="flex items-center">
                                 <input type="checkbox" name="auto_approve_time_entries" id="auto_approve_time_entries" value="1"
-                                       {{ old('auto_approve_time_entries', false) ? 'checked' : '' }}
+                                       {{ old('auto_approve_time_entries', true) ? 'checked' : '' }}
                                        class="h-4 w-4 rounded" style="color: var(--theme-accent); border-color: rgba(var(--theme-border-rgb), 0.8);" onfocus="this.style.boxShadow='0 0 0 2px var(--theme-accent)'">
                                 <label for="auto_approve_time_entries" class="ml-2 block" style="color: var(--theme-text); font-size: var(--theme-font-size);">
                                     <span class="font-medium">Auto-approve time entries</span>

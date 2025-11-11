@@ -663,9 +663,13 @@
                 'X-Requested-With': 'XMLHttpRequest'
             }
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success || response.redirected) {
+        .then(response => {
+            // Check if redirected before consuming response
+            const wasRedirected = response.redirected;
+            return response.json().then(data => ({data, wasRedirected}));
+        })
+        .then(({data, wasRedirected}) => {
+            if (data.success || wasRedirected) {
                 // Close modal and refresh page
                 closeCreateCompanyModal();
                 location.reload();

@@ -183,7 +183,6 @@ class CompanyController extends Controller
             'registration_number' => 'nullable|string|max:255',
             'invoice_prefix' => 'nullable|string|max:10',
             'default_hourly_rate' => 'nullable|numeric|min:0|max:9999.99',
-            'vat_rate' => 'nullable|numeric|min:0|max:100',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string|max:2000',
             'bank_details' => 'nullable|array',
@@ -209,7 +208,6 @@ class CompanyController extends Controller
                 'phone' => $request->phone,
                 'website' => $request->website,
                 'default_hourly_rate' => $request->default_hourly_rate ?? 75.00,
-                'vat_rate' => $request->vat_rate ?? 21.00,
                 'status' => $request->status ?? 'active',
                 'notes' => $request->notes,
                 'is_main_invoicing' => $request->boolean('is_main_invoicing'),
@@ -232,7 +230,6 @@ class CompanyController extends Controller
             if ($company->website) $creationDetails['Website'] = ['old' => null, 'new' => $company->website];
             if ($company->address) $creationDetails['Address'] = ['old' => null, 'new' => $company->address];
             $creationDetails['Hourly Rate'] = ['old' => null, 'new' => $company->default_hourly_rate];
-            $creationDetails['VAT Rate'] = ['old' => null, 'new' => $company->vat_rate];
             $creationDetails['Status'] = ['old' => null, 'new' => $company->status];
             $creationDetails['Active Status'] = ['old' => null, 'new' => $company->is_active];
             
@@ -442,7 +439,6 @@ class CompanyController extends Controller
             'address' => 'nullable|string|max:1000',
             'invoice_prefix' => 'nullable|string|max:10',
             'default_hourly_rate' => 'nullable|numeric|min:0|max:9999.99',
-            'vat_rate' => 'nullable|numeric|min:0|max:100',
             'status' => 'required|in:active,inactive',
             'notes' => 'nullable|string|max:2000',
             'bank_details' => 'nullable|array',
@@ -470,7 +466,6 @@ class CompanyController extends Controller
                 'address' => $request->address,
                 'invoice_prefix' => $request->invoice_prefix,
                 'default_hourly_rate' => $request->default_hourly_rate,
-                'vat_rate' => $request->vat_rate,
                 'status' => $request->status,
                 'notes' => $request->notes,
                 'bank_details' => $bankDetails,
@@ -495,7 +490,6 @@ class CompanyController extends Controller
                 'phone' => 'Phone',
                 'website' => 'Website',
                 'default_hourly_rate' => 'Hourly Rate',
-                'vat_rate' => 'VAT Rate',
                 'is_main_invoicing' => 'Main Invoicing',
                 'is_active' => 'Active Status'
             ];

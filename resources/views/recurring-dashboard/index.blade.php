@@ -12,28 +12,51 @@
                     <i class="fas fa-chart-line mr-2" style="color: var(--theme-primary);"></i>
                     Budget Tracking Dashboard
                 </h1>
-                <p class="text-gray-600" style="font-size: var(--theme-view-header-description-size); margin-top: 0.25rem;">Monthly budget overview for all recurring projects</p>
+                <p class="text-gray-600" style="font-size: var(--theme-view-header-description-size); margin-top: 0.25rem;">Monthly budget overview for recurring series and individual projects</p>
             </div>
 
-            {{-- Year Selector & Refresh Button --}}
+            {{-- Filters & Refresh Button --}}
             <div class="flex items-center gap-3">
-                <form method="GET" action="{{ route('recurring-dashboard') }}" class="flex items-center gap-3">
-                    <label class="text-sm font-medium" style="color: var(--theme-text);">Year:</label>
-                    <select name="year" onchange="this.form.submit()"
-                            class="border rounded-lg px-4 py-2 focus:outline-none focus:ring-2"
-                            style="border-color: rgba(var(--theme-border-rgb), 0.3); color: var(--theme-text); font-size: var(--theme-font-size);">
-                        @foreach($availableYears as $year)
-                            <option value="{{ $year }}" {{ $currentYear == $year ? 'selected' : '' }}>
-                                {{ $year }}
-                            </option>
-                        @endforeach
-                    </select>
+                <form method="GET" action="{{ route('recurring-dashboard') }}" class="flex items-center gap-4" id="filter-form">
+                    {{-- Company Filter --}}
+                    @if(in_array(Auth::user()->role, ['super_admin', 'admin']) && $allCompanies->count() > 1)
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium" style="color: var(--theme-text);">Company:</label>
+                        <select name="company_id" onchange="this.form.submit()"
+                                class="border rounded-lg px-4 py-2 focus:outline-none focus:ring-2"
+                                style="border-color: rgba(var(--theme-border-rgb), 0.3); color: var(--theme-text); font-size: var(--theme-font-size); min-width: 200px;">
+                            <option value="">All Companies</option>
+                            @foreach($allCompanies as $company)
+                                <option value="{{ $company->id }}" {{ $selectedCompanyId == $company->id ? 'selected' : '' }}>
+                                    {{ $company->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    @endif
+
+                    {{-- Year Filter --}}
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm font-medium" style="color: var(--theme-text);">Year:</label>
+                        <select name="year" onchange="this.form.submit()"
+                                class="border rounded-lg px-4 py-2 focus:outline-none focus:ring-2"
+                                style="border-color: rgba(var(--theme-border-rgb), 0.3); color: var(--theme-text); font-size: var(--theme-font-size);">
+                            @foreach($availableYears as $year)
+                                <option value="{{ $year }}" {{ $currentYear == $year ? 'selected' : '' }}>
+                                    {{ $year }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
                 </form>
 
                 {{-- Refresh Data Button --}}
                 <form method="POST" action="{{ route('recurring-dashboard.refresh') }}" id="refresh-form" class="inline">
                     @csrf
                     <input type="hidden" name="year" value="{{ $currentYear }}">
+                    @if($selectedCompanyId)
+                    <input type="hidden" name="company_id" value="{{ $selectedCompanyId }}">
+                    @endif
                     <button type="button" onclick="confirmRefresh()"
                             class="header-btn"
                             style="padding: calc(var(--theme-view-header-padding) * 0.5) var(--theme-view-header-padding); font-size: var(--theme-view-header-button-size);">
@@ -172,7 +195,14 @@
                         @foreach($overspentProjects as $series)
                         <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium" style="color: var(--theme-text);">{{ $series['series_name'] }}</div>
+                                <div class="text-sm font-medium" style="color: var(--theme-text);">
+                                    @if($series['is_individual'] ?? false)
+                                        <i class="fas fa-file-alt mr-1" style="color: var(--theme-info); opacity: 0.7;" title="Individual Project"></i>
+                                    @else
+                                        <i class="fas fa-layer-group mr-1" style="color: var(--theme-primary); opacity: 0.7;" title="Recurring Series"></i>
+                                    @endif
+                                    {{ $series['series_name'] }}
+                                </div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm" style="color: var(--theme-text-muted);">{{ $series['customer']->name ?? 'N/A' }}</div>
@@ -194,8 +224,27 @@
                                 <div class="text-xs font-medium" style="color: {{ $textColor }}; opacity: 0.8;">
                                     €{{ number_format($monthData['base_budget'], 0) }}
                                 </div>
-                                <div class="text-xs" style="color: {{ $textColor }}; opacity: 0.7;">
+                                @php
+                                    $hasAdditionalCosts = ($monthData['additional_costs_in_fee'] ?? 0) > 0 || ($monthData['additional_costs_outside_fee'] ?? 0) > 0;
+                                    $tooltipText = '';
+                                    if ($hasAdditionalCosts) {
+                                        $tooltipText = 'Time: €' . number_format($monthData['hours_value'], 0);
+                                        if (($monthData['additional_costs_in_fee'] ?? 0) > 0) {
+                                            $tooltipText .= '\nCosts (in fee): €' . number_format($monthData['additional_costs_in_fee'], 0);
+                                        }
+                                        if (($monthData['additional_costs_outside_fee'] ?? 0) > 0) {
+                                            $tooltipText .= '\nCosts (additional): €' . number_format($monthData['additional_costs_outside_fee'], 0);
+                                        }
+                                        $tooltipText .= '\nTotal: €' . number_format($monthData['spent'], 0);
+                                    }
+                                @endphp
+                                <div class="text-xs {{ $hasAdditionalCosts ? 'cursor-help' : '' }}"
+                                     style="color: {{ $textColor }}; opacity: 0.7;"
+                                     @if($hasAdditionalCosts) title="{{ $tooltipText }}" @endif>
                                     €{{ number_format($monthData['spent'], 0) }}
+                                    @if($hasAdditionalCosts)
+                                        <i class="fas fa-info-circle ml-1" style="opacity: 0.5; font-size: 0.7rem;"></i>
+                                    @endif
                                 </div>
                                 <div class="text-sm font-bold" style="color: {{ $textColor }};">
                                     €{{ number_format($monthData['month_variance'], 0) }}
@@ -257,7 +306,14 @@
                         @foreach($underspentProjects as $series)
                         <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium" style="color: var(--theme-text);">{{ $series['series_name'] }}</div>
+                                <div class="text-sm font-medium" style="color: var(--theme-text);">
+                                    @if($series['is_individual'] ?? false)
+                                        <i class="fas fa-file-alt mr-1" style="color: var(--theme-info); opacity: 0.7;" title="Individual Project"></i>
+                                    @else
+                                        <i class="fas fa-layer-group mr-1" style="color: var(--theme-primary); opacity: 0.7;" title="Recurring Series"></i>
+                                    @endif
+                                    {{ $series['series_name'] }}
+                                </div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm" style="color: var(--theme-text-muted);">{{ $series['customer']->name ?? 'N/A' }}</div>
@@ -279,8 +335,27 @@
                                 <div class="text-xs font-medium" style="color: {{ $textColor }}; opacity: 0.8;">
                                     €{{ number_format($monthData['base_budget'], 0) }}
                                 </div>
-                                <div class="text-xs" style="color: {{ $textColor }}; opacity: 0.7;">
+                                @php
+                                    $hasAdditionalCosts = ($monthData['additional_costs_in_fee'] ?? 0) > 0 || ($monthData['additional_costs_outside_fee'] ?? 0) > 0;
+                                    $tooltipText = '';
+                                    if ($hasAdditionalCosts) {
+                                        $tooltipText = 'Time: €' . number_format($monthData['hours_value'], 0);
+                                        if (($monthData['additional_costs_in_fee'] ?? 0) > 0) {
+                                            $tooltipText .= '\nCosts (in fee): €' . number_format($monthData['additional_costs_in_fee'], 0);
+                                        }
+                                        if (($monthData['additional_costs_outside_fee'] ?? 0) > 0) {
+                                            $tooltipText .= '\nCosts (additional): €' . number_format($monthData['additional_costs_outside_fee'], 0);
+                                        }
+                                        $tooltipText .= '\nTotal: €' . number_format($monthData['spent'], 0);
+                                    }
+                                @endphp
+                                <div class="text-xs {{ $hasAdditionalCosts ? 'cursor-help' : '' }}"
+                                     style="color: {{ $textColor }}; opacity: 0.7;"
+                                     @if($hasAdditionalCosts) title="{{ $tooltipText }}" @endif>
                                     €{{ number_format($monthData['spent'], 0) }}
+                                    @if($hasAdditionalCosts)
+                                        <i class="fas fa-info-circle ml-1" style="opacity: 0.5; font-size: 0.7rem;"></i>
+                                    @endif
                                 </div>
                                 <div class="text-sm font-bold" style="color: {{ $textColor }};">
                                     €{{ number_format($monthData['month_variance'], 0) }}
@@ -343,7 +418,14 @@
                         @foreach($noBudgetProjects as $series)
                         <tr class="hover:bg-gray-50">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium" style="color: var(--theme-text);">{{ $series['series_name'] }}</div>
+                                <div class="text-sm font-medium" style="color: var(--theme-text);">
+                                    @if($series['is_individual'] ?? false)
+                                        <i class="fas fa-file-alt mr-1" style="color: var(--theme-info); opacity: 0.7;" title="Individual Project"></i>
+                                    @else
+                                        <i class="fas fa-layer-group mr-1" style="color: var(--theme-primary); opacity: 0.7;" title="Recurring Series"></i>
+                                    @endif
+                                    {{ $series['series_name'] }}
+                                </div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm" style="color: var(--theme-text-muted);">{{ $series['customer']->name ?? 'N/A' }}</div>

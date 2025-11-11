@@ -18,6 +18,14 @@
                     </p>
                 </div>
                 <div class="flex items-center gap-3">
+                    {{-- Time Entries Button --}}
+                    <button onclick="openTimeEntriesModal()"
+                       class="header-btn"
+                       style="padding: calc(var(--theme-view-header-padding) * 0.5) var(--theme-view-header-padding); font-size: var(--theme-view-header-button-size); background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); border: none; cursor: pointer;">
+                        <i class="fas fa-clock mr-1.5"></i>
+                        Time Entries
+                    </button>
+
                     {{-- Year Budget Overview Link --}}
                     @if($project->monthly_fee && in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
                     <a href="{{ route('projects.year-budget', $project->id) }}"
@@ -28,13 +36,39 @@
                     </a>
                     @endif
 
-                    <a href="{{ route('projects.index') }}"
+                    {{-- Recurring Series Button (voor niet-recurring projects) --}}
+                    @if(!$project->is_recurring && in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                    <button onclick="openRecurringSeriesModal()"
+                            id="header-recurring-btn"
+                            class="header-btn"
+                            style="padding: calc(var(--theme-view-header-padding) * 0.5) var(--theme-view-header-padding); font-size: var(--theme-view-header-button-size); background-color: rgba(var(--theme-accent-rgb), 0.1); color: var(--theme-accent); border: none; cursor: pointer;"
+                            title="Add to Recurring Series">
+                        <i class="fas fa-layer-group mr-1.5"></i>
+                        Recurring Series
+                    </button>
+                    @endif
+
+                    {{-- Help Button (alleen voor recurring projects) --}}
+                    @if($project->is_recurring || $project->parent_recurring_project_id || $project->recurring_series_id)
+                    <button onclick="openHelpModal()"
+                            id="header-help-btn"
+                            class="header-btn"
+                            style="padding: calc(var(--theme-view-header-padding) * 0.5) var(--theme-view-header-padding); font-size: var(--theme-view-header-button-size); background-color: rgba(var(--theme-accent-rgb), 0.1); color: var(--theme-accent); border: none; cursor: pointer;"
+                            title="Recurring Projects Guide">
+                        <i class="fas fa-question-circle mr-1.5"></i>
+                        Help
+                    </button>
+                    @endif
+
+                    @if($project->customer)
+                    <a href="{{ route('customers.show', $project->customer->id) }}"
                        id="header-back-btn"
                        class="header-btn"
                        style="padding: calc(var(--theme-view-header-padding) * 0.5) var(--theme-view-header-padding); font-size: var(--theme-view-header-button-size);">
                         <i class="fas fa-arrow-left mr-1.5"></i>
-                        Back to Projects
+                        Back to Customer
                     </a>
+                    @endif
                 </div>
             </div>
         </div>
@@ -43,49 +77,10 @@
     {{-- Main Content --}}
     <div style="padding: 1.5rem 2rem;">
 
-        {{-- Project Status Stats Grid --}}
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-6">
-            <div class="rounded-lg border border-slate-200/60" style="padding: 1rem; background-color: rgba(var(--theme-primary-rgb), 0.05);">
-                <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 700; color: var(--theme-primary);">
-                    {{ $project->milestones->count() }}
-                </div>
-                <div style="font-size: var(--theme-font-size); color: var(--theme-primary);">
-                    Milestones
-                </div>
-            </div>
+        {{-- Full width layout --}}
+        <div class="projects-full-width" style="max-width: 100%;">
 
-            <div class="rounded-lg border border-slate-200/60" style="padding: 1rem; background-color: rgba(var(--theme-accent-rgb), 0.05);">
-                <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 700; color: var(--theme-accent);">
-                    {{ $project->milestones->sum(function($m) { return $m->tasks->count(); }) }}
-                </div>
-                <div style="font-size: var(--theme-font-size); color: var(--theme-accent);">
-                    Tasks
-                </div>
-            </div>
-
-            <div class="rounded-lg border border-slate-200/60" style="padding: 1rem; background-color: rgba(var(--theme-success-rgb), 0.05);">
-                <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 700; color: var(--theme-success);">
-                    {{ $project->milestones->where('status', 'completed')->count() }}
-                </div>
-                <div style="font-size: var(--theme-font-size); color: var(--theme-success);">
-                    Completed
-                </div>
-            </div>
-
-            <div class="rounded-lg border border-slate-200/60" style="padding: 1rem; background-color: rgba(var(--theme-warning-rgb), 0.05);">
-                <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 700; color: var(--theme-warning);">
-                    {{ $project->milestones->where('status', 'in_progress')->count() }}
-                </div>
-                <div style="font-size: var(--theme-font-size); color: var(--theme-warning);">
-                    In Progress
-                </div>
-            </div>
-        </div>
-
-        {{-- Two-column layout --}}
-        <div class="projects-two-column" style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: start;">
-
-            {{-- Left Column: Project Information & Structure --}}
+            {{-- All cards full width --}}
             <div class="space-y-4">
             <div id="project-info-block" class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
                 <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between;">
@@ -114,28 +109,29 @@
                     </div>
                     @endif
                 </div>
-                <div style="padding: var(--theme-card-padding);">
+                <div style="padding: var(--theme-card-padding); min-height: 310px;">
                     <form id="project-form">
-                        <div class="grid grid-cols-1 md:grid-cols-2">
-                            {{-- Left column: Basic & Timeline info --}}
-                            <div style="padding-right: 2rem;">
-                                <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Project Details</h3>
-                                <dl class="space-y-2">
+                        {{-- Three column grid voor fields --}}
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-x-8" style="column-gap: 3rem;">
+                            {{-- Left column: Basic Info --}}
+                            <div>
+                                <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Basic Information</h3>
+                                <dl>
                                     {{-- Name --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 90px;">Name:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); font-weight: 500; text-align: right; flex: 1; margin-left: 0.5rem;">{{ $project->name }}</dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Name:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); font-weight: 500; flex: 1;">{{ $project->name }}</dd>
+                                        <dd class="field-edit hidden" style="flex: 1;">
                                             <input type="text" name="name" value="{{ $project->name }}" required
-                                                   class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                   style="font-size: var(--theme-font-size);">
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                         </dd>
                                     </div>
 
                                     {{-- Customer --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 90px;">Customer:</dt>
-                                        <dd class="field-view" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Customer:</dt>
+                                        <dd class="field-view" style="flex: 1;">
                                             @if($project->customer)
                                                 <a href="{{ route('customers.show', $project->customer) }}?from=project&project_id={{ $project->id }}"
                                                    style="color: var(--theme-primary); text-decoration: none; font-size: var(--theme-font-size);">
@@ -145,8 +141,8 @@
                                                 <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">No customer</span>
                                             @endif
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                            <select name="customer_id" class="w-full px-2 py-1 border border-gray-300 rounded text-right" style="font-size: var(--theme-font-size);">
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <select name="customer_id" class="w-full border border-gray-300 rounded" style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                                 <option value="">No customer</option>
                                                 @foreach(\App\Models\Customer::where('status', 'active')->orderBy('name')->get() as $customer)
                                                     <option value="{{ $customer->id }}" {{ $project->customer_id == $customer->id ? 'selected' : '' }}>{{ $customer->name }}</option>
@@ -155,10 +151,138 @@
                                         </dd>
                                     </div>
 
+                                    {{-- Companies --}}
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Companies:</dt>
+                                        <dd class="field-view" style="flex: 1;">
+                                            @if($project->companies && $project->companies->count() > 0)
+                                                <div style="display: flex; flex-wrap: wrap; gap: 0.375rem;">
+                                                    @foreach($project->companies as $company)
+                                                        <a href="{{ route('companies.show', $company) }}"
+                                                           class="inline-flex items-center px-2 py-0.5 rounded"
+                                                           style="background-color: rgba(var(--theme-primary-rgb), 0.1);
+                                                                  color: var(--theme-primary);
+                                                                  text-decoration: none;
+                                                                  font-size: calc(var(--theme-font-size) - 2px);
+                                                                  font-weight: 500;
+                                                                  transition: all 0.2s;"
+                                                           onmouseover="this.style.backgroundColor='rgba(var(--theme-primary-rgb), 0.2)'"
+                                                           onmouseout="this.style.backgroundColor='rgba(var(--theme-primary-rgb), 0.1)'">
+                                                            <i class="fas fa-building mr-1" style="font-size: calc(var(--theme-font-size) - 3px);"></i>
+                                                            {{ $company->name }}
+                                                        </a>
+                                                    @endforeach
+                                                </div>
+                                            @else
+                                                <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">No companies linked</span>
+                                            @endif
+                                        </dd>
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <select name="company_ids[]" multiple class="w-full border border-gray-300 rounded"
+                                                    style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.25rem 0.5rem; min-height: 80px;">
+                                                @foreach(\App\Models\Company::where('is_active', true)->orderBy('name')->get() as $company)
+                                                    <option value="{{ $company->id }}"
+                                                            {{ $project->companies->contains($company->id) ? 'selected' : '' }}>
+                                                        {{ $company->name }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            <p style="font-size: calc(var(--theme-font-size) - 3px); color: var(--theme-text-muted); margin-top: 0.25rem;">
+                                                Hold Ctrl/Cmd to select multiple companies
+                                            </p>
+                                        </dd>
+                                    </div>
+
+                                    {{-- Project Managers --}}
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Project Manager(s):</dt>
+                                        <dd class="field-view" style="flex: 1;">
+                                            @php
+                                                // Get project managers: users with role=project_manager OR role_override=project_manager
+                                                $projectManagers = $project->users()
+                                                    ->where(function($q) {
+                                                        $q->where('users.role', 'project_manager')
+                                                          ->orWhere('project_users.role_override', 'project_manager');
+                                                    })
+                                                    ->get();
+                                            @endphp
+                                            @if($projectManagers && $projectManagers->count() > 0)
+                                                <div style="display: flex; flex-wrap: wrap; gap: 0.375rem;">
+                                                    @foreach($projectManagers as $manager)
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded"
+                                                              style="background-color: rgba(var(--theme-accent-rgb), 0.1);
+                                                                     color: var(--theme-accent);
+                                                                     font-size: calc(var(--theme-font-size) - 2px);
+                                                                     font-weight: 500;">
+                                                            <i class="fas fa-user-tie mr-1" style="font-size: calc(var(--theme-font-size) - 3px);"></i>
+                                                            {{ $manager->name }}
+                                                        </span>
+                                                    @endforeach
+                                                </div>
+                                            @else
+                                                <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">No project managers assigned</span>
+                                            @endif
+                                        </dd>
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <select name="project_manager_ids[]" multiple class="w-full border border-gray-300 rounded"
+                                                    style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.25rem 0.5rem; min-height: 100px;">
+                                                @php
+                                                    // Get all active users (any role can be project manager via role_override)
+                                                    $allUsers = \App\Models\User::where('is_active', true)
+                                                        ->orderBy('name')
+                                                        ->get();
+                                                    $currentManagerIds = $projectManagers->pluck('id')->toArray();
+                                                @endphp
+                                                @foreach($allUsers as $user)
+                                                    <option value="{{ $user->id }}"
+                                                            {{ in_array($user->id, $currentManagerIds) ? 'selected' : '' }}>
+                                                        {{ $user->name }} ({{ ucfirst($user->role) }})
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            <p style="font-size: calc(var(--theme-font-size) - 3px); color: var(--theme-text-muted); margin-top: 0.25rem;">
+                                                Hold Ctrl/Cmd to select multiple project managers. Users will get project manager permissions for this project.
+                                            </p>
+                                        </dd>
+                                    </div>
+
+                                    {{-- Recurring Series --}}
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Recurring Series:</dt>
+                                        <dd class="field-view" style="flex: 1;">
+                                            @if($project->recurring_series_id)
+                                                <a href="{{ route('projects.series-budget', $project->id) }}"
+                                                   style="color: var(--theme-primary); text-decoration: none; font-size: var(--theme-font-size);">
+                                                    <i class="fas fa-layer-group mr-1"></i>
+                                                    Series #{{ $project->recurring_series_id }}
+                                                </a>
+                                            @else
+                                                @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                                                    <button onclick="openRecurringSeriesModal()" type="button"
+                                                            class="inline-flex items-center px-2 py-1 rounded transition-colors"
+                                                            style="background-color: rgba(var(--theme-accent-rgb), 0.1); color: var(--theme-accent); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; border: none; cursor: pointer;">
+                                                        <i class="fas fa-plus mr-1"></i>
+                                                        Add to Series
+                                                    </button>
+                                                @else
+                                                    <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">No series</span>
+                                                @endif
+                                            @endif
+                                        </dd>
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <input type="text" name="recurring_series_id" value="{{ $project->recurring_series_id ?? '' }}" placeholder="Enter series ID or leave empty"
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
+                                            <p style="font-size: calc(var(--theme-font-size) - 3px); color: var(--theme-text-muted); margin-top: 0.25rem;">
+                                                Or use the "Add to Series" button in view mode
+                                            </p>
+                                        </dd>
+                                    </div>
+
                                     {{-- Status --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 90px;">Status:</dt>
-                                        <dd class="field-view" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Status:</dt>
+                                        <dd class="field-view" style="flex: 1;">
                                             <span class="px-2 py-1 rounded-full" style="
                                                 font-size: calc(var(--theme-font-size) - 2px); font-weight: 500;
                                                 {{ $project->status === 'completed' ? 'background-color: rgba(var(--theme-success-rgb), 0.1); color: var(--theme-success);' :
@@ -168,8 +292,8 @@
                                                 {{ ucfirst(str_replace('_', ' ', $project->status)) }}
                                             </span>
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                            <select name="status" required class="w-full px-2 py-1 border border-gray-300 rounded text-right" style="font-size: var(--theme-font-size);">
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <select name="status" required class="w-full border border-gray-300 rounded" style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                                 <option value="draft" {{ $project->status == 'draft' ? 'selected' : '' }}>Draft</option>
                                                 <option value="active" {{ $project->status == 'active' ? 'selected' : '' }}>Active</option>
                                                 <option value="on_hold" {{ $project->status == 'on_hold' ? 'selected' : '' }}>On Hold</option>
@@ -180,75 +304,99 @@
                                     </div>
 
                                     {{-- Start Date --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 90px;">Start Date:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Start Date:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); flex: 1;">
                                             {{ $project->start_date ? \Carbon\Carbon::parse($project->start_date)->format('M j, Y') : 'Not set' }}
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                        <dd class="field-edit hidden" style="flex: 1;">
                                             <input type="date" name="start_date" value="{{ $project->start_date ? $project->start_date->format('Y-m-d') : '' }}"
-                                                   class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                   style="font-size: var(--theme-font-size);">
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                         </dd>
                                     </div>
 
                                     {{-- End Date --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 90px;">End Date:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">End Date:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); flex: 1;">
                                             {{ $project->end_date ? \Carbon\Carbon::parse($project->end_date)->format('M j, Y') : 'Not set' }}
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                        <dd class="field-edit hidden" style="flex: 1;">
                                             <input type="date" name="end_date" value="{{ $project->end_date ? $project->end_date->format('Y-m-d') : '' }}"
-                                                   class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                   style="font-size: var(--theme-font-size);">
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </div>
+
+                            {{-- Middle column: Description & Notes --}}
+                            <div>
+                                <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Description & Notes</h3>
+                                <dl>
+                                    {{-- Description --}}
+                                    <div style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); margin-bottom: 0.5rem;">Description:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); line-height: 1.5; white-space: pre-wrap;">{{ $project->description ?: 'No description' }}</dd>
+                                        <dd class="field-edit hidden">
+                                            <textarea name="description" rows="1" class="w-full border border-gray-300 rounded" style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">{{ $project->description }}</textarea>
+                                        </dd>
+                                    </div>
+
+                                    {{-- Notes --}}
+                                    <div>
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); margin-bottom: 0.5rem;">Notes:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); line-height: 1.5; white-space: pre-wrap; font-style: italic;">{{ $project->notes ?: 'No notes' }}</dd>
+                                        <dd class="field-edit hidden">
+                                            <textarea name="notes" rows="1" class="w-full border border-gray-300 rounded" style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4; font-style: italic;">{{ $project->notes }}</textarea>
                                         </dd>
                                     </div>
                                 </dl>
                             </div>
 
                             {{-- Right column: Financial & Settings --}}
-                            <div style="padding-left: 2rem;">
+                            <div>
                                 <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Financial & Settings</h3>
-                                <dl class="space-y-2">
+                                <dl>
                                     {{-- Monthly Fee --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 100px;">Monthly Fee:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Monthly Fee:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); flex: 1;">
                                             @if($project->monthly_fee)
                                                 <span style="font-weight: 500;">€{{ number_format($project->monthly_fee, 2) }}</span>
                                             @else
                                                 <em style="color: var(--theme-text-muted);">Not set</em>
                                             @endif
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                        <dd class="field-edit hidden" style="flex: 1;">
                                             <input type="number" step="0.01" name="monthly_fee" value="{{ $project->monthly_fee }}" placeholder="0.00"
-                                                   class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                   style="font-size: var(--theme-font-size);">
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                         </dd>
                                     </div>
 
                                     {{-- Hourly Rate --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 100px;">Hourly Rate:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Hourly Rate:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); flex: 1;">
                                             @if($project->default_hourly_rate)
                                                 <span style="font-weight: 500;">€{{ number_format($project->default_hourly_rate, 2) }}/hr</span>
                                             @else
                                                 <em style="color: var(--theme-text-muted);">Not set</em>
                                             @endif
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                        <dd class="field-edit hidden" style="flex: 1;">
                                             <input type="number" step="0.01" name="default_hourly_rate" value="{{ $project->default_hourly_rate }}" placeholder="0.00"
-                                                   class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                   style="font-size: var(--theme-font-size);">
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                         </dd>
                                     </div>
 
                                     {{-- Time Costs (calculated, not editable) --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 100px;">Time Costs:</dt>
-                                        <dd style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Time Costs:</dt>
+                                        <dd style="flex: 1;">
                                             @php
                                                 $totalTimeCosts = $project->total_time_costs ?? 0;
                                                 $totalLoggedHours = $project->total_logged_hours ?? 0;
@@ -264,26 +412,26 @@
                                     </div>
 
                                     {{-- VAT Rate --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 100px;">VAT Rate:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">VAT Rate:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); flex: 1;">
                                             {{ $project->vat_rate ? number_format($project->vat_rate, 2) . '%' : 'Not set' }}
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                        <dd class="field-edit hidden" style="flex: 1;">
                                             <input type="number" step="0.01" name="vat_rate" value="{{ $project->vat_rate }}" placeholder="21.00"
-                                                   class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                   style="font-size: var(--theme-font-size);">
+                                                   class="w-full border border-gray-300 rounded"
+                                                   style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                         </dd>
                                     </div>
 
                                     {{-- Billing Frequency --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 100px;">Billing Freq:</dt>
-                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3" style="margin-bottom: 1rem;">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Billing Freq:</dt>
+                                        <dd class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); flex: 1;">
                                             {{ $project->billing_frequency ? ucfirst(str_replace('_', ' ', $project->billing_frequency)) : 'Not set' }}
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                            <select name="billing_frequency" class="w-full px-2 py-1 border border-gray-300 rounded text-right" style="font-size: var(--theme-font-size);">
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <select name="billing_frequency" class="w-full border border-gray-300 rounded" style="font-size: calc(var(--theme-font-size) - 2px); padding: 0.15rem 0.5rem; line-height: 1.4;">
                                                 <option value="">Not set</option>
                                                 <option value="monthly" {{ $project->billing_frequency == 'monthly' ? 'selected' : '' }}>Monthly</option>
                                                 <option value="quarterly" {{ $project->billing_frequency == 'quarterly' ? 'selected' : '' }}>Quarterly</option>
@@ -295,9 +443,9 @@
                                     </div>
 
                                     {{-- Fee Rollover --}}
-                                    <div class="flex justify-between items-start">
-                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 100px;">Fee Rollover:</dt>
-                                        <dd class="field-view" style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                    <div class="flex items-start gap-3">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 110px;">Fee Rollover:</dt>
+                                        <dd class="field-view" style="flex: 1;">
                                             @if($project->fee_rollover_enabled)
                                                 <span style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-success); background-color: rgba(var(--theme-success-rgb), 0.1); padding: 0.25rem 0.5rem; border-radius: 0.25rem;">
                                                     <i class="fas fa-check-circle mr-1"></i>Enabled
@@ -306,8 +454,8 @@
                                                 <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">Disabled</span>
                                             @endif
                                         </dd>
-                                        <dd class="field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                            <label class="flex items-center justify-end">
+                                        <dd class="field-edit hidden" style="flex: 1;">
+                                            <label class="flex items-center">
                                                 <input type="checkbox" name="fee_rollover_enabled" value="1" {{ $project->fee_rollover_enabled ? 'checked' : '' }} class="mr-2">
                                                 <span style="font-size: calc(var(--theme-font-size) - 1px);">Enable</span>
                                             </label>
@@ -315,61 +463,288 @@
                                     </div>
                                 </dl>
                             </div>
-
-                            {{-- Description and Notes --}}
-                            <div class="col-span-2" style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid rgba(203, 213, 225, 0.3);">
-                                {{-- Description --}}
-                                <div class="mb-4">
-                                    <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Description</h3>
-                                    <div class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); line-height: 1.5; white-space: pre-wrap;">{{ $project->description ?: 'No description' }}</div>
-                                    <div class="field-edit hidden">
-                                        <textarea name="description" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded" style="font-size: var(--theme-font-size);">{{ $project->description }}</textarea>
-                                    </div>
-                                </div>
-
-                                {{-- Notes --}}
-                                <div>
-                                    <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Notes</h3>
-                                    <div class="field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); line-height: 1.5; white-space: pre-wrap; font-style: italic;">{{ $project->notes ?: 'No notes' }}</div>
-                                    <div class="field-edit hidden">
-                                        <textarea name="notes" rows="3" class="w-full px-3 py-2 border border-gray-300 rounded" style="font-size: var(--theme-font-size); font-style: italic;">{{ $project->notes }}</textarea>
-                                    </div>
-                                </div>
-                            </div>
                         </div>
                     </form>
                 </div>
             </div>
 
+            {{-- Additional Costs Section --}}
+            <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden mb-6">
+                <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;" onclick="toggleAdditionalCosts()">
+                    <div class="flex items-center gap-4" style="flex: 1;">
+                        <div class="flex items-center" style="min-width: 280px;">
+                            <i id="additional-costs-chevron" class="fas fa-chevron-down mr-2 transition-transform" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);"></i>
+                            <h2 style="font-size: calc(var(--theme-font-size) + 1px); font-weight: 600; color: var(--theme-text); margin: 0;">
+                                <i class="fas fa-receipt mr-2"></i>
+                                Additional Costs
+                            </h2>
+                        </div>
+                        @php
+                            $totalCosts = $project->additionalCosts->count();
+                            $totalAmount = $project->additionalCosts->sum(function($cost) {
+                                return $cost->calculateAmount();
+                            });
+                        @endphp
+                        <div id="additional-costs-summary" class="flex items-center gap-6" style="font-size: calc(var(--theme-font-size) + 1px);">
+                            <span style="color: var(--theme-text-muted); min-width: 80px;">
+                                {{ $totalCosts }} {{ $totalCosts === 1 ? 'item' : 'items' }}
+                            </span>
+                            <span style="color: var(--theme-text); font-weight: 600; min-width: 120px;">
+                                €{{ number_format($totalAmount, 2) }}
+                            </span>
+                        </div>
+                    </div>
+                    @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                    <button id="additional-costs-action-btn" onclick="event.stopPropagation(); openCreateCostModal();"
+                       class="inline-flex items-center px-3 py-1.5 rounded transition-colors hidden"
+                       style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; border: none; cursor: pointer;">
+                        <i class="fas fa-plus mr-1.5"></i>
+                        Add Cost
+                    </button>
+                    @endif
+                </div>
+
+                <div id="additional-costs-content" class="hidden" style="padding: var(--theme-card-padding);">
+                    @if($project->additionalCosts->count() > 0)
+                        {{-- Within Budget (in_fee) Costs --}}
+                        @if($project->additionalCosts->where('fee_type', 'in_fee')->count() > 0)
+                        <div class="mb-6">
+                            <h3 class="text-sm font-medium mb-3" style="color: #10b981;">
+                                💚 Within Budget (counts toward monthly fee)
+                            </h3>
+                            <div class="space-y-2">
+                                @foreach($project->additionalCosts->where('fee_type', 'in_fee') as $cost)
+                                <div class="border-l-4 rounded" style="border-color: #10b981; background-color: #f0fdf4; padding: 0.75rem 1rem;">
+                                    <div style="display: grid; grid-template-columns: 2fr 2fr 1.5fr 1fr 1fr auto; gap: 1.5rem; align-items: center;">
+                                        {{-- Name --}}
+                                        <div>
+                                            <div class="font-medium" style="color: var(--theme-text); font-size: var(--theme-font-size);">{{ $cost->name }}</div>
+                                        </div>
+
+                                        {{-- Description --}}
+                                        <div>
+                                            <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.4;">
+                                                {{ $cost->description ?: '—' }}
+                                            </div>
+                                        </div>
+
+                                        {{-- Type Badge --}}
+                                        <div>
+                                            @if($cost->cost_type === 'monthly_recurring')
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #e0e7ff; color: #4338ca;">
+                                                    <i class="fas fa-sync-alt mr-1"></i> Monthly
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #f3e8ff; color: #7c3aed;">
+                                                    <i class="fas fa-bolt mr-1"></i> {{ $cost->start_date->format('M Y') }}
+                                                </span>
+                                            @endif
+                                        </div>
+
+                                        {{-- Calculation --}}
+                                        <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted);">
+                                            @if($cost->calculation_type === 'hourly_rate')
+                                                {{ $cost->hours }}h × €{{ number_format($cost->hourly_rate, 2) }}
+                                            @elseif($cost->calculation_type === 'quantity_based')
+                                                {{ $cost->quantity }} × €{{ number_format($cost->amount, 2) }}
+                                            @else
+                                                Fixed
+                                            @endif
+                                        </div>
+
+                                        {{-- Amount --}}
+                                        <div class="text-right">
+                                            <div class="font-semibold" style="color: #10b981; font-size: calc(var(--theme-font-size) + 2px);">
+                                                €{{ number_format($cost->calculateAmount(), 2) }}
+                                            </div>
+                                        </div>
+
+                                        {{-- Actions --}}
+                                        <div>
+                                            @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                                            <div class="flex items-center gap-1">
+                                                <button onclick="openViewCostModal({{ $cost->id }})"
+                                                        class="p-1 rounded hover:bg-slate-100 transition-colors"
+                                                        style="color: #64748b;"
+                                                        title="View">
+                                                    <i class="fas fa-eye" style="font-size: 11px;"></i>
+                                                </button>
+                                                <button onclick="openEditCostModal({{ $cost->id }})"
+                                                        class="p-1 rounded hover:bg-slate-100 transition-colors"
+                                                        style="color: #64748b;"
+                                                        title="Edit">
+                                                    <i class="fas fa-edit" style="font-size: 11px;"></i>
+                                                </button>
+                                                <button onclick="deleteCost({{ $cost->id }})"
+                                                        class="p-1 rounded hover:bg-slate-100 transition-colors"
+                                                        style="color: #64748b;"
+                                                        title="Delete">
+                                                    <i class="fas fa-trash" style="font-size: 11px;"></i>
+                                                </button>
+                                            </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                                @endforeach
+                            </div>
+                        </div>
+                        @endif
+
+                        {{-- Additional Billing Costs --}}
+                        @if($project->additionalCosts->where('fee_type', 'additional')->count() > 0)
+                        <div class="mb-6">
+                            <h3 class="text-sm font-medium mb-3" style="color: #f59e0b;">
+                                💰 Additional Billing (billed separately)
+                            </h3>
+                            <div class="space-y-2">
+                                @foreach($project->additionalCosts->where('fee_type', 'additional') as $cost)
+                                <div class="border-l-4 rounded" style="border-color: #f59e0b; background-color: #fffbeb; padding: 0.75rem 1rem;">
+                                    <div style="display: grid; grid-template-columns: 2fr 2fr 1.5fr 1fr 1fr auto; gap: 1.5rem; align-items: center;">
+                                        {{-- Name --}}
+                                        <div>
+                                            <div class="font-medium" style="color: var(--theme-text); font-size: var(--theme-font-size);">{{ $cost->name }}</div>
+                                        </div>
+
+                                        {{-- Description --}}
+                                        <div>
+                                            <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.4;">
+                                                {{ $cost->description ?: '—' }}
+                                            </div>
+                                        </div>
+
+                                        {{-- Type Badge --}}
+                                        <div>
+                                            @if($cost->cost_type === 'monthly_recurring')
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #e0e7ff; color: #4338ca;">
+                                                    <i class="fas fa-sync-alt mr-1"></i> Monthly
+                                                </span>
+                                            @else
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: #f3e8ff; color: #7c3aed;">
+                                                    <i class="fas fa-bolt mr-1"></i> {{ $cost->start_date->format('M Y') }}
+                                                </span>
+                                            @endif
+                                        </div>
+
+                                        {{-- Calculation --}}
+                                        <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted);">
+                                            @if($cost->calculation_type === 'hourly_rate')
+                                                {{ $cost->hours }}h × €{{ number_format($cost->hourly_rate, 2) }}
+                                            @elseif($cost->calculation_type === 'quantity_based')
+                                                {{ $cost->quantity }} × €{{ number_format($cost->amount, 2) }}
+                                            @else
+                                                Fixed
+                                            @endif
+                                        </div>
+
+                                        {{-- Amount --}}
+                                        <div class="text-right">
+                                            <div class="font-semibold" style="color: #f59e0b; font-size: calc(var(--theme-font-size) + 2px);">
+                                                €{{ number_format($cost->calculateAmount(), 2) }}
+                                            </div>
+                                        </div>
+
+                                        {{-- Actions --}}
+                                        <div>
+                                            @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                                            <div class="flex items-center gap-1">
+                                                <button onclick="openViewCostModal({{ $cost->id }})"
+                                                        class="p-1 rounded hover:bg-slate-100 transition-colors"
+                                                        style="color: #64748b;"
+                                                        title="View">
+                                                    <i class="fas fa-eye" style="font-size: 11px;"></i>
+                                                </button>
+                                                <button onclick="openEditCostModal({{ $cost->id }})"
+                                                        class="p-1 rounded hover:bg-slate-100 transition-colors"
+                                                        style="color: #64748b;"
+                                                        title="Edit">
+                                                    <i class="fas fa-edit" style="font-size: 11px;"></i>
+                                                </button>
+                                                <button onclick="deleteCost({{ $cost->id }})"
+                                                        class="p-1 rounded hover:bg-slate-100 transition-colors"
+                                                        style="color: #64748b;"
+                                                        title="Delete">
+                                                    <i class="fas fa-trash" style="font-size: 11px;"></i>
+                                                </button>
+                                            </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                                @endforeach
+                            </div>
+                        </div>
+                        @endif
+                    @else
+                        <div class="text-center py-8" style="color: var(--theme-text-muted);">
+                            <i class="fas fa-receipt fa-3x mb-3" style="opacity: 0.3;"></i>
+                            <p class="font-medium">No additional costs yet</p>
+                            <p class="text-sm">Add costs like hosting, software licenses, or extra services</p>
+                            @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                            <button onclick="openCreateCostModal()"
+                               class="inline-flex items-center px-4 py-2 mt-4 rounded"
+                               style="background-color: var(--theme-primary); color: white; font-size: var(--theme-font-size); border: none; cursor: pointer;">
+                                <i class="fas fa-plus mr-2"></i>
+                                Add First Cost
+                            </button>
+                            @endif
+                        </div>
+                    @endif
+                </div>
+            </div>
+
                 {{-- Project Structure: Milestones & Tasks --}}
                 <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between;">
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">Project Structure</h2>
+                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;" onclick="toggleProjectStructure()">
+                        <div class="flex items-center gap-4" style="flex: 1;">
+                            <div class="flex items-center" style="min-width: 280px;">
+                                <i id="project-structure-chevron" class="fas fa-chevron-down mr-2 transition-transform" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);"></i>
+                                <h2 style="font-size: calc(var(--theme-font-size) + 1px); font-weight: 600; color: var(--theme-text); margin: 0;">
+                                    <i class="fas fa-sitemap mr-2"></i>
+                                    Project Structure
+                                </h2>
+                            </div>
+                            @php
+                                // Bereken totaal aantal gelogde uren (alleen approved)
+                                $totalHours = $project->timeEntries()
+                                    ->where('status', 'approved')
+                                    ->get()
+                                    ->sum(function($entry) {
+                                        return $entry->hours + ($entry->minutes / 60);
+                                    });
+                            @endphp
+                            <div id="project-structure-summary" class="flex items-center gap-6" style="font-size: calc(var(--theme-font-size) + 1px);">
+                                <span style="color: var(--theme-text); font-weight: 600; min-width: 200px;">
+                                    {{ number_format($totalHours, 1) }} hours logged
+                                </span>
+                            </div>
+                        </div>
                         @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
-                        <a href="{{ route('projects.edit', $project) }}"
-                           class="inline-flex items-center px-2 py-1 rounded transition-colors"
+                        <a id="project-structure-action-btn" href="{{ route('projects.edit', $project) }}"
+                           onclick="event.stopPropagation();"
+                           class="inline-flex items-center px-2 py-1 rounded transition-colors hidden"
                            style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500;">
                             <i class="fas fa-edit mr-1"></i>
                             Edit
                         </a>
                         @endif
                     </div>
-                    <div style="padding: var(--theme-card-padding);">
+                    <div id="project-structure-content" class="hidden" style="padding: var(--theme-card-padding);">
                         @if($project->milestones->count() > 0)
                             <div class="space-y-4">
                                 @foreach($project->milestones as $milestone)
                                 <div class="border rounded-lg" style="border-color: rgba(203, 213, 225, 0.4);">
-                                    {{-- Milestone Header --}}
-                                    <div class="p-3" style="background-color: rgba(var(--theme-primary-rgb), 0.03); border-bottom: 1px solid rgba(203, 213, 225, 0.3);">
+                                    {{-- Milestone Header - Compacter --}}
+                                    <div class="px-3 py-2" style="background-color: rgba(var(--theme-primary-rgb), 0.03); border-bottom: 1px solid rgba(203, 213, 225, 0.3);">
                                         <div class="flex items-center justify-between">
                                             <div class="flex items-center gap-2">
-                                                <i class="fas fa-flag" style="color: var(--theme-primary); font-size: var(--theme-font-size);"></i>
+                                                <i class="fas fa-flag" style="color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);"></i>
                                                 <span style="font-weight: 600; color: var(--theme-text); font-size: var(--theme-font-size);">{{ $milestone->name }}</span>
-                                                <span class="px-2 py-0.5 rounded text-xs" style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 2px);">
+                                                <span class="px-2 py-0.5 rounded text-xs" style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 3px);">
                                                     {{ ucfirst($milestone->status) }}
                                                 </span>
                                             </div>
-                                            <div class="flex items-center gap-4">
+                                            <div class="flex items-center gap-3">
                                                 @php
                                                     $milestoneLoggedHours = $milestone->total_logged_hours;
                                                     $milestoneLoggedFormatted = $milestone->formatted_logged_hours;
@@ -379,7 +754,7 @@
                                                     $milestoneColor = $milestoneIsOver ? '#ef4444' : ($milestoneIsNear ? '#f59e0b' : '#10b981');
                                                 @endphp
                                                 @if($milestoneLoggedHours > 0 || $milestoneEstimatedHours > 0)
-                                                <div class="flex items-center gap-2" style="font-size: calc(var(--theme-font-size) - 1px);">
+                                                <div class="flex items-center gap-2" style="font-size: calc(var(--theme-font-size) - 2px);">
                                                     @if($milestoneEstimatedHours > 0)
                                                     <span style="color: var(--theme-text-muted);">
                                                         <i class="fas fa-clock mr-1"></i>{{ $milestoneEstimatedHours }}h est.
@@ -395,39 +770,39 @@
                                                 </div>
                                                 @endif
                                                 @if($milestone->tasks->count() > 0)
-                                                <span style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                                <span style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
                                                     {{ $milestone->tasks->count() }} {{ $milestone->tasks->count() === 1 ? 'task' : 'tasks' }}
                                                 </span>
                                                 @endif
                                             </div>
                                         </div>
                                         @if($milestone->description)
-                                        <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); margin-top: 0.5rem;">
+                                        <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px); margin-top: 0.375rem; line-height: 1.4;">
                                             {{ $milestone->description }}
                                         </div>
                                         @endif
                                     </div>
 
-                                    {{-- Tasks --}}
+                                    {{-- Tasks - Compacter --}}
                                     @if($milestone->tasks->count() > 0)
-                                    <div class="p-3">
-                                        <div class="space-y-2">
+                                    <div class="px-3 py-2">
+                                        <div class="space-y-1.5">
                                             @foreach($milestone->tasks as $task)
-                                            <div class="flex items-start gap-2 p-2 rounded" style="background-color: rgba(248, 250, 252, 0.5);">
+                                            <div class="flex items-start gap-2 px-2 py-1.5 rounded" style="background-color: rgba(248, 250, 252, 0.5);">
                                                 <div class="flex-shrink-0 mt-0.5">
                                                     <i class="fas {{ $task->status === 'completed' ? 'fa-check-circle' : 'fa-circle' }}"
-                                                       style="color: {{ $task->status === 'completed' ? 'var(--theme-success)' : 'var(--theme-text-muted)' }}; font-size: var(--theme-font-size);"></i>
+                                                       style="color: {{ $task->status === 'completed' ? 'var(--theme-success)' : 'var(--theme-text-muted)' }}; font-size: calc(var(--theme-font-size) - 2px);"></i>
                                                 </div>
-                                                <div class="flex-1">
-                                                    <div style="font-size: var(--theme-font-size); color: var(--theme-text); {{ $task->status === 'completed' ? 'text-decoration: line-through; opacity: 0.7;' : '' }}">
+                                                <div class="flex-1" style="min-width: 0;">
+                                                    <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text); {{ $task->status === 'completed' ? 'text-decoration: line-through; opacity: 0.7;' : '' }}">
                                                         {{ $task->name }}
                                                     </div>
                                                     @if($task->description)
-                                                    <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); margin-top: 0.25rem;">
-                                                        {{ Str::limit($task->description, 100) }}
+                                                    <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px); margin-top: 0.25rem; line-height: 1.4; word-wrap: break-word; overflow-wrap: break-word;">
+                                                        {{ $task->description }}
                                                     </div>
                                                     @endif
-                                                    <div class="flex items-center gap-3 mt-1" style="font-size: calc(var(--theme-font-size) - 2px); color: var(--theme-text-muted);">
+                                                    <div class="flex items-center gap-2.5 mt-1 flex-wrap" style="font-size: calc(var(--theme-font-size) - 3px); color: var(--theme-text-muted);">
                                                         @if($task->estimated_hours)
                                                         <span><i class="fas fa-clock mr-1"></i>{{ $task->estimated_hours }}h est.</span>
                                                         @endif
@@ -449,7 +824,7 @@
                                                         @if($task->pricing_type === 'fixed_price' && $task->fixed_price)
                                                         <span><i class="fas fa-euro-sign mr-1"></i>€{{ number_format($task->fixed_price, 2) }}</span>
                                                         @endif
-                                                        <span class="px-1.5 py-0.5 rounded" style="background-color: rgba(var(--theme-text-muted-rgb), 0.1);">
+                                                        <span class="px-1.5 py-0.5 rounded" style="background-color: rgba(var(--theme-text-muted-rgb), 0.1); font-size: calc(var(--theme-font-size) - 3px);">
                                                             {{ ucfirst($task->status) }}
                                                         </span>
                                                     </div>
@@ -459,7 +834,7 @@
                                         </div>
                                     </div>
                                     @else
-                                    <div class="p-3 text-center" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                    <div class="px-3 py-2 text-center" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
                                         No tasks in this milestone
                                     </div>
                                     @endif
@@ -479,601 +854,38 @@
                         @endif
                     </div>
                 </div>
-            {{-- Recurring Project Information Card --}}
-            @if($project->is_recurring || $project->parent_recurring_project_id)
-            <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding);">
-                    <div class="flex items-center justify-between">
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">
-                            @if($project->is_recurring)
-                            <i class="fas fa-sync-alt mr-2" style="color: rgb(139, 92, 246);"></i>
-                            Recurring Project Settings
-                            @else
-                            <i class="fas fa-robot mr-2" style="color: rgb(59, 130, 246);"></i>
-                            Auto-Generated Project
-                            @endif
-                        </h2>
-                        @if($project->is_recurring && in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
-                        <button onclick="openRecurringSettingsModal()"
-                                class="inline-flex items-center px-2 py-1 rounded transition-colors"
-                                style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500;">
-                            <i class="fas fa-edit mr-1"></i>
-                            Edit Settings
-                        </button>
-                        @endif
-                    </div>
-                </div>
-                <div style="padding: var(--theme-card-padding);">
-                    @if($project->is_recurring)
-                        {{-- Master Recurring Project Info --}}
-                        <div class="space-y-3">
-                            <div class="bg-purple-50 border border-purple-200 rounded-lg p-3">
-                                <div class="flex items-start">
-                                    <div class="flex-shrink-0">
-                                        <i class="fas fa-info-circle text-purple-400"></i>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm text-purple-700">
-                                            <strong>Master Recurring Project:</strong> This project automatically generates new projects {{ $project->recurring_frequency === 'monthly' ? 'every month' : 'every quarter' }}.
-                                        </p>
-                                    </div>
-                                </div>
+
+                {{-- Team Members --}}
+                <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
+                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;" onclick="toggleTeamMembers()">
+                        <div class="flex items-center gap-4" style="flex: 1;">
+                            <div class="flex items-center" style="min-width: 280px;">
+                                <i id="team-members-chevron" class="fas fa-chevron-down mr-2 transition-transform" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);"></i>
+                                <h2 style="font-size: calc(var(--theme-font-size) + 1px); font-weight: 600; color: var(--theme-text); margin: 0;">
+                                    <i class="fas fa-users mr-2"></i>
+                                    Team Members
+                                </h2>
                             </div>
-
-                            <dl class="space-y-2">
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Base Name:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text); font-weight: 500;">
-                                        {{ $project->recurring_base_name ?? 'Not set' }}
-                                    </dd>
-                                </div>
-
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Frequency:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
-                                        {{ ucfirst($project->recurring_frequency ?? 'monthly') }}
-                                    </dd>
-                                </div>
-
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Create Days Before:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
-                                        {{ $project->recurring_days_before ?? 7 }} days
-                                    </dd>
-                                </div>
-
-                                @if($project->recurring_end_date)
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Ends On:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
-                                        {{ $project->recurring_end_date->format('d M Y') }}
-                                    </dd>
-                                </div>
-                                @else
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Ends On:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">
-                                        Continues indefinitely
-                                    </dd>
-                                </div>
-                                @endif
-                            </dl>
-
-                            {{-- Generated Projects List --}}
                             @php
-                                $childProjects = \App\Models\Project::where('parent_recurring_project_id', $project->id)
-                                    ->orderBy('start_date', 'desc')
-                                    ->get();
+                                $totalMembers = $project->users->count();
                             @endphp
-
-                            @if($childProjects->count() > 0)
-                            <div class="mt-4 pt-4 border-t" style="border-color: rgba(203, 213, 225, 0.3);">
-                                <h3 style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">
-                                    Generated Projects ({{ $childProjects->count() }})
-                                </h3>
-                                <div class="space-y-2">
-                                    @foreach($childProjects as $child)
-                                    <div class="flex items-center justify-between p-2 rounded hover:bg-gray-50">
-                                        <div class="flex items-center gap-2">
-                                            <i class="fas fa-robot text-blue-400" style="font-size: calc(var(--theme-font-size) - 2px);"></i>
-                                            <a href="{{ route('projects.show', $child) }}" style="color: var(--theme-primary); text-decoration: none; font-size: calc(var(--theme-font-size) - 1px);">
-                                                {{ $child->name }}
-                                            </a>
-                                        </div>
-                                        <span class="px-2 py-0.5 rounded-full" style="font-size: calc(var(--theme-font-size) - 3px); font-weight: 500; background-color: rgba(var(--theme-success-rgb), 0.1); color: var(--theme-success);">
-                                            {{ $child->status }}
-                                        </span>
-                                    </div>
-                                    @endforeach
-                                </div>
-                            </div>
-                            @endif
-                        </div>
-                    @else
-                        {{-- Auto-Generated Child Project Info --}}
-                        @php
-                            $parentProject = \App\Models\Project::find($project->parent_recurring_project_id);
-                        @endphp
-
-                        @if($parentProject)
-                        <div class="space-y-3">
-                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                <div class="flex items-start">
-                                    <div class="flex-shrink-0">
-                                        <i class="fas fa-info-circle text-blue-400"></i>
-                                    </div>
-                                    <div class="ml-3">
-                                        <p class="text-sm text-blue-700">
-                                            <strong>Auto-Generated:</strong> This project was automatically created from a recurring master project.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <dl class="space-y-2">
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Master Project:</dt>
-                                    <dd style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                        <a href="{{ route('projects.show', $parentProject) }}" style="color: var(--theme-primary); text-decoration: none; font-size: var(--theme-font-size);">
-                                            {{ $parentProject->name }}
-                                        </a>
-                                    </dd>
-                                </div>
-
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Period:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
-                                        {{ $project->recurring_period ?? 'Not set' }}
-                                    </dd>
-                                </div>
-
-                                <div class="flex justify-between items-start">
-                                    <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Created From:</dt>
-                                    <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
-                                        {{ ucfirst($parentProject->recurring_frequency ?? 'monthly') }} recurring template
-                                    </dd>
-                                </div>
-                            </dl>
-                        </div>
-                        @endif
-                    @endif
-                </div>
-            </div>
-            @endif
-
-
-            {{-- Add to Recurring Series (for any non-recurring project) --}}
-            @if(!$project->is_recurring && in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
-            <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between;">
-                    <div>
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">
-                            <i class="fas fa-layer-group mr-2" style="color: rgb(59, 130, 246);"></i>
-                            Add to Recurring Series
-                        </h2>
-                        @if($project->recurring_series_id)
-                            <p class="text-xs mt-1" style="color: var(--theme-text-muted);">
-                                Current series: <strong style="color: var(--theme-primary);">{{ $project->recurring_series_id }}</strong>
-                            </p>
-                        @endif
-                    </div>
-                </div>
-                <div style="padding: var(--theme-card-padding);">
-                    {{-- Master Template Toggle (alleen als project in series zit) --}}
-                    @if($project->recurring_series_id)
-                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center">
-                                <div class="flex-shrink-0">
-                                    <i class="fas fa-crown text-purple-600 text-xl"></i>
-                                </div>
-                                <div class="ml-3">
-                                    <h4 class="text-sm font-semibold text-purple-900">Master Template for Series</h4>
-                                    <p class="text-xs text-purple-700 mt-1">
-                                        @if($project->is_master_template)
-                                            ✅ This project is the master template for <strong>{{ $project->recurring_series_id }}</strong>
-                                        @else
-                                            This project is part of series: <strong>{{ $project->recurring_series_id }}</strong>
-                                        @endif
-                                    </p>
-                                </div>
-                            </div>
-                            <form action="{{ route('projects.toggleMasterTemplate', $project) }}" method="POST" onsubmit="return confirmMasterTemplateToggle({{ $project->is_master_template ? 'false' : 'true' }})">
-                                @csrf
-                                @if($project->is_master_template)
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 bg-red-100 border border-red-300 rounded-lg text-sm font-medium text-red-700 hover:bg-red-200 transition-colors">
-                                        <i class="fas fa-times-circle mr-2"></i>
-                                        Remove Master Status
-                                    </button>
-                                @else
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 bg-purple-600 border border-transparent rounded-lg text-sm font-medium text-white hover:bg-purple-700 transition-colors shadow-sm">
-                                        <i class="fas fa-arrow-up mr-2"></i>
-                                        Upgrade to Master Template
-                                    </button>
-                                @endif
-                            </form>
-                        </div>
-                        @if(!$project->is_master_template)
-                        <div class="mt-3 pt-3 border-t border-purple-200">
-                            <p class="text-xs text-purple-600">
-                                <strong>💡 Tip:</strong> Make this the master template to use it for auto-generating future projects in this series with clean, general structure (no month-specific tasks).
-                            </p>
-                        </div>
-                        @endif
-                    </div>
-                    @endif
-
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-                        <div class="flex items-start">
-                            <div class="flex-shrink-0">
-                                <i class="fas fa-info-circle text-blue-400"></i>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm text-blue-700">
-                                    Group this project with other projects for consolidated budget tracking. Select an existing series or create a new one.
-                                </p>
+                            <div id="team-members-summary" class="flex items-center gap-6" style="font-size: calc(var(--theme-font-size) + 1px);">
+                                <span style="color: var(--theme-text); font-weight: 600; min-width: 200px;">
+                                    {{ $totalMembers }} {{ $totalMembers === 1 ? 'member' : 'members' }}
+                                </span>
                             </div>
                         </div>
-                    </div>
-
-                    @php
-                        $existingSeriesForStandalone = \App\Models\Project::whereNotNull('recurring_series_id')
-                            ->select('recurring_series_id', DB::raw('COUNT(*) as project_count'))
-                            ->groupBy('recurring_series_id')
-                            ->orderBy('recurring_series_id')
-                            ->get();
-                    @endphp
-
-                    <form action="{{ route('projects.updateSeriesId', $project) }}" method="POST" class="space-y-3">
-                        @csrf
-                        @method('PUT')
-
-                        <div>
-                            <label style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); display: block; margin-bottom: 0.5rem;">
-                                Recurring Series ID:
-                            </label>
-                            <select id="standalone_series_select"
-                                    onchange="handleStandaloneSeriesSelection(this.value)"
-                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    style="font-size: var(--theme-font-size);">
-                                <option value="">Remove from series</option>
-                                <option value="_custom">Create new custom series ID</option>
-                                @if($existingSeriesForStandalone->count() > 0)
-                                    <optgroup label="Existing Series">
-                                        @foreach($existingSeriesForStandalone as $seriesId)
-                                        <option value="{{ $seriesId->recurring_series_id }}"
-                                                {{ $project->recurring_series_id == $seriesId->recurring_series_id ? 'selected' : '' }}>
-                                            {{ $seriesId->recurring_series_id }}
-                                            ({{ $seriesId->project_count }} {{ $seriesId->project_count == 1 ? 'project' : 'projects' }})
-                                        </option>
-                                        @endforeach
-                                    </optgroup>
-                                @endif
-                            </select>
-                        </div>
-
-                        <input type="text"
-                               name="recurring_series_id"
-                               id="standalone_series_custom"
-                               value="{{ $project->recurring_series_id }}"
-                               style="display: none;"
-                               class="w-full px-3 py-2 mt-3 border-2 border-blue-400 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-blue-50"
-                               placeholder="e.g., anker-solix-recurring">
-
-                        <button type="submit"
-                                class="w-full inline-flex justify-center items-center px-4 py-2 rounded-lg transition-colors"
-                                style="background-color: rgb(59, 130, 246); color: white; font-size: var(--theme-font-size); font-weight: 500;"
-                                onmouseover="this.style.backgroundColor='rgb(37, 99, 235)'"
-                                onmouseout="this.style.backgroundColor='rgb(59, 130, 246)'">
-                            <i class="fas fa-save mr-2"></i>
-                            Update Series
-                        </button>
-                    </form>
-
-                    {{-- INLINE JavaScript: Must be here to be available when form loads --}}
-                    <script>
-                    // Handle standalone project series ID selection - INLINE DEFINITION
-                    window.handleStandaloneSeriesSelection = function(value) {
-                        console.log('✅ handleStandaloneSeriesSelection called with value:', value);
-
-                        const customInput = document.getElementById('standalone_series_custom');
-
-                        if (!customInput) {
-                            console.error('❌ ERROR: Element with ID "standalone_series_custom" not found!');
-                            alert('Error: Input field not found. Please refresh the page and try again.');
-                            return;
-                        }
-
-                        console.log('✅ Custom input element found:', customInput);
-
-                        if (value === '_custom') {
-                            // Show custom input field with animation
-                            console.log('👁️ Showing custom input field...');
-                            customInput.style.display = 'block';
-                            customInput.style.marginTop = '1rem';
-
-                            // Slight delay to ensure display is rendered before focus
-                            setTimeout(() => {
-                                customInput.focus();
-                                customInput.value = ''; // Clear for new custom entry
-                                console.log('✅ Custom input field is now visible and focused');
-                            }, 50);
-                        } else {
-                            // Hide custom input field
-                            console.log('🙈 Hiding custom input field...');
-                            customInput.style.display = 'none';
-
-                            if (value) {
-                                // Set selected series ID
-                                customInput.value = value;
-                                console.log('✅ Set custom input value to:', value);
-                            } else {
-                                // Clear value (remove from series)
-                                customInput.value = '';
-                                console.log('🗑️ Cleared custom input value');
-                            }
-                        }
-                    };
-
-                    console.log('✅ handleStandaloneSeriesSelection function is READY!');
-                    </script>
-                </div>
-            </div>
-            @endif
-
-            </div> {{-- End Left Column --}}
-
-            {{-- Right Column: Customer, Team & Structure --}}
-            <div class="space-y-4">
-
-                {{-- Customer Information --}}
-                @if($project->customer)
-                <div id="customer-info-block" class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between;">
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">Customer Information</h2>
                         @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
-                        <button onclick="toggleCustomerEdit()"
-                                id="edit-customer-btn"
-                                class="inline-flex items-center px-2 py-1 rounded transition-colors"
-                                style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500;">
-                            <i class="fas fa-edit mr-1"></i>
-                            Edit
-                        </button>
-                        <div id="edit-customer-actions" class="hidden flex items-center gap-2">
-                            <button onclick="saveCustomerEdit()"
-                                    class="inline-flex items-center px-2 py-1 rounded transition-colors"
-                                    style="background-color: rgba(var(--theme-success-rgb), 0.1); color: var(--theme-success); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500;">
-                                <i class="fas fa-check mr-1"></i>
-                                Save
-                            </button>
-                            <button onclick="cancelCustomerEdit()"
-                                    class="inline-flex items-center px-2 py-1 rounded transition-colors"
-                                    style="background-color: rgba(var(--theme-danger-rgb), 0.1); color: var(--theme-danger); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500;">
-                                <i class="fas fa-times mr-1"></i>
-                                Cancel
-                            </button>
-                        </div>
-                        @endif
-                    </div>
-                    <div style="padding: var(--theme-card-padding);">
-                        <form id="customer-form">
-                            <div class="grid grid-cols-1 md:grid-cols-2">
-                                <div style="padding-right: 2rem;">
-                                    <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Primary Contact</h3>
-                                    <dl class="space-y-2">
-                                        {{-- Name --}}
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">Name:</dt>
-                                            <dd class="customer-field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); font-weight: 500; text-align: right; flex: 1; margin-left: 0.5rem;">{{ $project->customer->name }}</dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <input type="text" name="name" value="{{ $project->customer->name }}" required
-                                                       class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                       style="font-size: var(--theme-font-size);">
-                                            </dd>
-                                        </div>
-
-                                        {{-- Email --}}
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">Email:</dt>
-                                            <dd class="customer-field-view" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                @if($project->customer->email)
-                                                    <a href="mailto:{{ $project->customer->email }}"
-                                                       style="color: var(--theme-primary); text-decoration: none; font-size: var(--theme-font-size);">
-                                                        {{ $project->customer->email }}
-                                                    </a>
-                                                @else
-                                                    <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">Not set</span>
-                                                @endif
-                                            </dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <input type="email" name="email" value="{{ $project->customer->email }}" placeholder="email@example.com"
-                                                       class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                       style="font-size: var(--theme-font-size);">
-                                            </dd>
-                                        </div>
-
-                                        {{-- Phone --}}
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">Phone:</dt>
-                                            <dd class="customer-field-view" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                @if($project->customer->phone)
-                                                    <a href="tel:{{ $project->customer->phone }}"
-                                                       style="color: var(--theme-primary); text-decoration: none; font-size: var(--theme-font-size);">
-                                                        {{ $project->customer->phone }}
-                                                    </a>
-                                                @else
-                                                    <span style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">Not set</span>
-                                                @endif
-                                            </dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <input type="tel" name="phone" value="{{ $project->customer->phone }}" placeholder="+31 6 12345678"
-                                                       class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                       style="font-size: var(--theme-font-size);">
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                </div>
-
-                                <div style="padding-left: 2rem;">
-                                    <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Address</h3>
-                                    <dl class="space-y-2">
-                                        {{-- Street --}}
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">Street:</dt>
-                                            <dd class="customer-field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                {{ $project->customer->street ?: 'Not set' }}
-                                            </dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <input type="text" name="street" value="{{ $project->customer->street }}" placeholder="Street name and number"
-                                                       class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                       style="font-size: var(--theme-font-size);">
-                                            </dd>
-                                        </div>
-
-                                        {{-- Addition (optional) --}}
-                                        @if($project->customer->addition)
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">Addition:</dt>
-                                            <dd class="customer-field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                {{ $project->customer->addition }}
-                                            </dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <input type="text" name="addition" value="{{ $project->customer->addition }}" placeholder="e.g., 2nd floor, rear"
-                                                       class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                       style="font-size: var(--theme-font-size);">
-                                            </dd>
-                                        </div>
-                                        @endif
-
-                                        {{-- Zip & City --}}
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">City:</dt>
-                                            <dd class="customer-field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                {{ $project->customer->zip_code ? $project->customer->zip_code . ' ' : '' }}{{ $project->customer->city ?: 'Not set' }}
-                                            </dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <div class="flex gap-1">
-                                                    <input type="text" name="zip_code" value="{{ $project->customer->zip_code }}" placeholder="1234 AB"
-                                                           class="w-24 px-2 py-1 border border-gray-300 rounded text-right"
-                                                           style="font-size: var(--theme-font-size);">
-                                                    <input type="text" name="city" value="{{ $project->customer->city }}" placeholder="City"
-                                                           class="flex-1 px-2 py-1 border border-gray-300 rounded text-right"
-                                                           style="font-size: var(--theme-font-size);">
-                                                </div>
-                                            </dd>
-                                        </div>
-
-                                        {{-- Country --}}
-                                        <div class="flex justify-between items-start">
-                                            <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); min-width: 80px;">Country:</dt>
-                                            <dd class="customer-field-view" style="font-size: var(--theme-font-size); color: var(--theme-text); text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                {{ $project->customer->country ?: 'Not set' }}
-                                            </dd>
-                                            <dd class="customer-field-edit hidden" style="text-align: right; flex: 1; margin-left: 0.5rem;">
-                                                <input type="text" name="country" value="{{ $project->customer->country }}" placeholder="Netherlands"
-                                                       class="w-full px-2 py-1 border border-gray-300 rounded text-right"
-                                                       style="font-size: var(--theme-font-size);">
-                                            </dd>
-                                        </div>
-                                    </dl>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-                @endif
-
-                {{-- Customer Contact --}}
-                @if($project->customer && $project->customer->contacts->isNotEmpty())
-                <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between;">
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">Customer Contact</h2>
-                        @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
-                        <a href="{{ route('contacts.index', ['customer_id' => $project->customer_id, 'return_to_project' => $project->id]) }}"
-                           class="inline-flex items-center px-2 py-1 rounded transition-colors"
-                           style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500;">
-                            <i class="fas fa-users-cog mr-1"></i>
-                            Manage
-                        </a>
-                        @endif
-                    </div>
-                    <div style="padding: var(--theme-card-padding);">
-                        <div class="space-y-3">
-                            @foreach($project->customer->contacts as $contact)
-                            <div class="flex items-start" style="padding: 0.75rem; background-color: rgba(248, 250, 252, 0.5); border-radius: 0.5rem; border: 1px solid rgba(226, 232, 240, 0.8);">
-                                <div class="flex-shrink-0" style="width: 2.5rem; height: 2.5rem; border-radius: 9999px; background: linear-gradient(135deg, var(--theme-primary) 0%, rgba(var(--theme-primary-rgb), 0.7) 100%); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: calc(var(--theme-font-size) + 2px);">
-                                    {{ strtoupper(substr($contact->name, 0, 1)) }}
-                                </div>
-                                <div class="ml-3 flex-1">
-                                    <div class="flex items-center gap-2">
-                                        <span style="font-weight: 600; color: var(--theme-text); font-size: var(--theme-font-size);">{{ $contact->name }}</span>
-                                        @if($contact->is_primary)
-                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium" style="background-color: rgba(34, 197, 94, 0.1); color: #16a34a; font-size: calc(var(--theme-font-size) - 2px);">
-                                            <i class="fas fa-star mr-1" style="font-size: calc(var(--theme-font-size) - 3px);"></i>
-                                            Primary
-                                        </span>
-                                        @endif
-                                    </div>
-                                    @if($contact->position)
-                                    <div style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); margin-top: 0.25rem;">
-                                        <i class="fas fa-briefcase mr-1" style="font-size: calc(var(--theme-font-size) - 2px);"></i>
-                                        {{ $contact->position }}
-                                    </div>
-                                    @endif
-                                    <div class="flex flex-wrap gap-3 mt-2">
-                                        @if($contact->email)
-                                        <a href="mailto:{{ $contact->email }}" class="inline-flex items-center hover:underline" style="color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);">
-                                            <i class="fas fa-envelope mr-1" style="font-size: calc(var(--theme-font-size) - 2px);"></i>
-                                            {{ $contact->email }}
-                                        </a>
-                                        @endif
-                                        @if($contact->phone)
-                                        <a href="tel:{{ $contact->phone }}" class="inline-flex items-center hover:underline" style="color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);">
-                                            <i class="fas fa-phone mr-1" style="font-size: calc(var(--theme-font-size) - 2px);"></i>
-                                            {{ $contact->phone }}
-                                        </a>
-                                        @endif
-                                    </div>
-                                </div>
-                            </div>
-                            @endforeach
-                        </div>
-                    </div>
-                </div>
-                @endif
-
-                {{-- Team & Companies --}}
-                <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between;">
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">Team & Companies</h2>
-                        @if(in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
-                        <button onclick="openTeamModal()"
-                           class="inline-flex items-center px-2 py-1 rounded transition-colors"
+                        <button id="team-members-action-btn" onclick="event.stopPropagation(); openTeamModal();"
+                           class="inline-flex items-center px-2 py-1 rounded transition-colors hidden"
                            style="background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; border: none; cursor: pointer;">
                             <i class="fas fa-edit mr-1"></i>
                             Manage
                         </button>
                         @endif
                     </div>
-                    <div style="padding: var(--theme-card-padding);">
-                        {{-- Companies --}}
-                        @if($project->companies->count() > 0)
-                        <div class="mb-6">
-                            <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Associated Companies</h3>
-                            <div class="space-y-2">
-                                @foreach($project->companies as $company)
-                                <div class="flex items-center justify-between p-3 rounded-lg" style="background-color: rgba(var(--theme-primary-rgb), 0.05); border: 1px solid rgba(var(--theme-primary-rgb), 0.1);">
-                                    <span style="font-size: var(--theme-font-size); font-weight: 500; color: var(--theme-text);">{{ $company->name }}</span>
-                                </div>
-                                @endforeach
-                            </div>
-                        </div>
-                        @endif
-
-                        {{-- Team Members --}}
+                    <div id="team-members-content" class="hidden" style="padding: var(--theme-card-padding);">
                         @if($project->users->count() > 0)
-                        <div>
-                            <h3 style="font-size: calc(var(--theme-font-size) - 2px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">Team Members</h3>
                             <div class="space-y-2">
                                 @foreach($project->users as $user)
                                 <div class="flex items-center justify-between p-3 rounded-lg" style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 1px solid rgba(var(--theme-accent-rgb), 0.1);">
@@ -1089,62 +901,212 @@
                                 </div>
                                 @endforeach
                             </div>
-                        </div>
-                        @endif
-
-                        {{-- No team/companies message --}}
-                        @if($project->companies->count() === 0 && $project->users->count() === 0)
-                        <div class="text-center py-8" style="color: var(--theme-text-muted);">
-                            <i class="fas fa-users" style="font-size: calc(var(--theme-font-size) + 12px); margin-bottom: 0.5rem;"></i>
-                            <p style="font-size: var(--theme-font-size);">No team members or companies assigned yet</p>
-                        </div>
+                        @else
+                            <div class="text-center py-8" style="color: var(--theme-text-muted);">
+                                <i class="fas fa-users" style="font-size: calc(var(--theme-font-size) + 12px); margin-bottom: 0.5rem;"></i>
+                                <p style="font-size: var(--theme-font-size);">No team members assigned yet</p>
+                            </div>
                         @endif
                     </div>
                 </div>
 
-                {{-- Quick Actions --}}
-                <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
-                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center;">
-                        <h2 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text); margin: 0;">Quick Actions</h2>
+                {{-- Recurring Project Information Card --}}
+                @if($project->is_recurring || $project->parent_recurring_project_id)
+                <div class="bg-white/60 backdrop-blur-sm border border-slate-200/60" style="border-radius: var(--theme-border-radius); overflow: hidden;">
+                    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;" onclick="toggleRecurringSettings()">
+                        <div class="flex items-center gap-4" style="flex: 1;">
+                            <div class="flex items-center" style="min-width: 280px;">
+                                <i id="recurring-settings-chevron" class="fas fa-chevron-down mr-2 transition-transform" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);"></i>
+                                <h2 style="font-size: calc(var(--theme-font-size) + 1px); font-weight: 600; color: var(--theme-text); margin: 0;">
+                                    @if($project->is_recurring)
+                                    <i class="fas fa-sync-alt mr-2" style="color: var(--theme-accent);"></i>
+                                    Recurring Settings
+                                    @else
+                                    <i class="fas fa-robot mr-2" style="color: var(--theme-primary);"></i>
+                                    Auto-Generated
+                                    @endif
+                                </h2>
+                            </div>
+                            @php
+                                if ($project->is_recurring) {
+                                    $childProjects = \App\Models\Project::where('parent_recurring_project_id', $project->id)->count();
+                                    $frequency = ucfirst($project->recurring_frequency ?? 'monthly');
+                                } else {
+                                    $parentProject = \App\Models\Project::find($project->parent_recurring_project_id);
+                                }
+                            @endphp
+                            <div id="recurring-settings-summary" class="flex items-center gap-6" style="font-size: calc(var(--theme-font-size) + 1px);">
+                                @if($project->is_recurring)
+                                    <span style="color: var(--theme-text); font-weight: 600; min-width: 200px;">
+                                        {{ $frequency }} • {{ $childProjects }} generated
+                                    </span>
+                                @else
+                                    @if(isset($parentProject))
+                                    <span style="color: var(--theme-text); font-weight: 600; min-width: 200px;">
+                                        From: {{ $parentProject->name }}
+                                    </span>
+                                    @endif
+                                @endif
+                            </div>
+                        </div>
+                        @if($project->is_recurring && in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+                        <button id="recurring-settings-action-btn" onclick="event.stopPropagation(); openRecurringSettingsModal();"
+                                class="inline-flex items-center transition-colors hidden"
+                                style="padding: 0.25rem 0.5rem; background-color: rgba(var(--theme-primary-rgb), 0.1); color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; border: none; border-radius: var(--theme-border-radius); cursor: pointer;">
+                            <i class="fas fa-edit mr-1"></i>
+                            Edit Settings
+                        </button>
+                        @endif
                     </div>
-                    <div style="padding: var(--theme-card-padding);">
-                        <div class="grid grid-cols-1 gap-3">
-                            <button onclick="openTimeEntriesModal()"
-                                    class="flex items-center p-3 rounded-lg transition-colors text-left w-full"
-                                    style="background-color: rgba(var(--theme-primary-rgb), 0.05); border: 1px solid rgba(var(--theme-primary-rgb), 0.1); cursor: pointer;">
-                                <i class="fas fa-clock mr-3" style="color: var(--theme-primary); font-size: var(--theme-font-size);"></i>
-                                <div>
-                                    <div style="font-size: var(--theme-font-size); font-weight: 500; color: var(--theme-text);">Time Entries</div>
-                                    <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted);">View and manage time tracking</div>
+                    <div id="recurring-settings-content" class="hidden" style="padding: var(--theme-card-padding);">
+                        @if($project->is_recurring)
+                            {{-- Master Recurring Project Info --}}
+                            <div class="space-y-3">
+                                <div style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0">
+                                            <i class="fas fa-info-circle" style="color: var(--theme-accent);"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text);">
+                                                <strong>Master Recurring Project:</strong> This project automatically generates new projects {{ $project->recurring_frequency === 'monthly' ? 'every month' : 'every quarter' }}.
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                            </button>
-                            @if($project->customer)
-                            <a href="{{ route('customers.show', $project->customer) }}?from=project&project_id={{ $project->id }}"
-                               class="flex items-center p-3 rounded-lg transition-colors"
-                               style="background-color: rgba(var(--theme-success-rgb), 0.05); border: 1px solid rgba(var(--theme-success-rgb), 0.1); text-decoration: none;">
-                                <i class="fas fa-user mr-3" style="color: var(--theme-success); font-size: var(--theme-font-size);"></i>
-                                <div>
-                                    <div style="font-size: var(--theme-font-size); font-weight: 500; color: var(--theme-text);">View Customer</div>
-                                    <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted);">{{ $project->customer->name }}</div>
+
+                                <dl class="space-y-2">
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Base Name:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text); font-weight: 500;">
+                                            {{ $project->recurring_base_name ?? 'Not set' }}
+                                        </dd>
+                                    </div>
+
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Frequency:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
+                                            {{ ucfirst($project->recurring_frequency ?? 'monthly') }}
+                                        </dd>
+                                    </div>
+
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Create Days Before:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
+                                            {{ $project->recurring_days_before ?? 7 }} days
+                                        </dd>
+                                    </div>
+
+                                    @if($project->recurring_end_date)
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Ends On:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
+                                            {{ $project->recurring_end_date->format('d M Y') }}
+                                        </dd>
+                                    </div>
+                                    @else
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Ends On:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">
+                                            Continues indefinitely
+                                        </dd>
+                                    </div>
+                                    @endif
+                                </dl>
+
+                                {{-- Generated Projects List --}}
+                                @php
+                                    $childProjects = \App\Models\Project::where('parent_recurring_project_id', $project->id)
+                                        ->orderBy('start_date', 'desc')
+                                        ->get();
+                                @endphp
+
+                                @if($childProjects->count() > 0)
+                                <div class="mt-4 pt-4 border-t" style="border-color: rgba(203, 213, 225, 0.3);">
+                                    <h3 style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem;">
+                                        Generated Projects ({{ $childProjects->count() }})
+                                    </h3>
+                                    <div class="space-y-2">
+                                        @foreach($childProjects as $child)
+                                        <div class="flex items-center justify-between p-2 rounded hover:style="background-color: rgba(var(--theme-bg-rgb), 0.5);"">
+                                            <div class="flex items-center gap-2">
+                                                <i class="fas fa-robot text-blue-400" style="font-size: calc(var(--theme-font-size) - 2px);"></i>
+                                                <a href="{{ route('projects.show', $child) }}" style="color: var(--theme-primary); text-decoration: none; font-size: calc(var(--theme-font-size) - 1px);">
+                                                    {{ $child->name }}
+                                                </a>
+                                            </div>
+                                            <span class="px-2 py-0.5 rounded-full" style="font-size: calc(var(--theme-font-size) - 3px); font-weight: 500; background-color: rgba(var(--theme-success-rgb), 0.1); color: var(--theme-success);">
+                                                {{ $child->status }}
+                                            </span>
+                                        </div>
+                                        @endforeach
+                                    </div>
                                 </div>
-                            </a>
+                                @endif
+                            </div>
+                        @else
+                            {{-- Auto-Generated Child Project Info --}}
+                            @php
+                                $parentProject = \App\Models\Project::find($project->parent_recurring_project_id);
+                            @endphp
+
+                            @if($parentProject)
+                            <div class="space-y-3">
+                                <div style="background-color: rgba(var(--theme-primary-rgb), 0.05); border: 1px solid rgba(var(--theme-primary-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                                    <div class="flex items-start">
+                                        <div class="flex-shrink-0">
+                                            <i class="fas fa-info-circle" style="color: var(--theme-primary);"></i>
+                                        </div>
+                                        <div class="ml-3">
+                                            <p style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text);">
+                                                <strong>Auto-Generated:</strong> This project was automatically created from a recurring master project.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <dl class="space-y-2">
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Master Project:</dt>
+                                        <dd style="text-align: right; flex: 1; margin-left: 0.5rem;">
+                                            <a href="{{ route('projects.show', $parentProject) }}" style="color: var(--theme-primary); text-decoration: none; font-size: var(--theme-font-size);">
+                                                {{ $parentProject->name }}
+                                            </a>
+                                        </dd>
+                                    </div>
+
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Period:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
+                                            {{ $project->recurring_period ?? 'Not set' }}
+                                        </dd>
+                                    </div>
+
+                                    <div class="flex justify-between items-start">
+                                        <dt style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted);">Created From:</dt>
+                                        <dd style="font-size: var(--theme-font-size); color: var(--theme-text);">
+                                            {{ ucfirst($parentProject->recurring_frequency ?? 'monthly') }} recurring template
+                                        </dd>
+                                    </div>
+                                </dl>
+                            </div>
                             @endif
-                        </div>
+                        @endif
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
+                @endif
 
-{{-- Project Activity Timeline --}}
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    @include('projects.partials.activity-timeline', ['activities' => $activities])
+                {{-- Project Activity Timeline --}}
+                @include('projects.partials.activity-timeline', ['activities' => $activities])
+
+                {{-- Add to Recurring Series - Nu een popup modal ipv statische sectie --}}
+            </div>
+    </div>
 </div>
 
 {{-- Time Entries Modal --}}
 <div id="timeEntriesModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="if(event.target === this) closeTimeEntriesModal()">
-    <div class="bg-white rounded-xl shadow-2xl" style="width: 95%; max-width: 1200px; max-height: 85vh; overflow-y: auto;">
+    <div class="bg-white shadow-2xl" style="width: 95%; max-width: 1200px; max-height: 85vh; overflow-y: auto; border-radius: var(--theme-border-radius);">
         {{-- Modal Header --}}
         <div class="border-b sticky top-0 bg-white z-10" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
             <div>
@@ -1158,18 +1120,22 @@
 
         {{-- Statistics Cards --}}
         <div id="time-entries-stats" class="p-4 border-b" style="border-color: rgba(203, 213, 225, 0.3); display: none;">
-            <div class="grid grid-cols-3 gap-4">
+            <div class="grid grid-cols-4 gap-4">
                 <div class="p-3 rounded-lg" style="background-color: rgba(var(--theme-primary-rgb), 0.05); border: 1px solid rgba(var(--theme-primary-rgb), 0.1);">
                     <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); margin-bottom: 0.25rem;">Total Entries</div>
                     <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 600; color: var(--theme-primary);" id="stat-total-entries">-</div>
                 </div>
+                <div class="p-3 rounded-lg" style="background-color: rgba(var(--theme-info-rgb), 0.05); border: 1px solid rgba(var(--theme-info-rgb), 0.1);">
+                    <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); margin-bottom: 0.25rem;">This Month</div>
+                    <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 600; color: var(--theme-info);" id="stat-current-month-entries">-</div>
+                </div>
+                <div class="p-3 rounded-lg" style="background-color: #dbeafe; border: 1px solid #93c5fd;">
+                    <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); margin-bottom: 0.25rem;">From Previous</div>
+                    <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 600; color: #2563eb;" id="stat-deferred-entries">-</div>
+                </div>
                 <div class="p-3 rounded-lg" style="background-color: rgba(var(--theme-success-rgb), 0.05); border: 1px solid rgba(var(--theme-success-rgb), 0.1);">
                     <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); margin-bottom: 0.25rem;">Total Hours</div>
                     <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 600; color: var(--theme-success);" id="stat-total-hours">-</div>
-                </div>
-                <div class="p-3 rounded-lg" style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 1px solid rgba(var(--theme-accent-rgb), 0.1);">
-                    <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); margin-bottom: 0.25rem;">Duration</div>
-                    <div style="font-size: calc(var(--theme-font-size) + 8px); font-weight: 600; color: var(--theme-accent);" id="stat-total-duration">-</div>
                 </div>
             </div>
         </div>
@@ -1192,6 +1158,7 @@
                                 <th style="padding: 0.75rem 1rem; text-align: left; font-size: calc(var(--theme-font-size) - 1px); font-weight: 600; color: var(--theme-text); text-transform: uppercase; letter-spacing: 0.05em;">Description</th>
                                 <th style="padding: 0.75rem 1rem; text-align: center; font-size: calc(var(--theme-font-size) - 1px); font-weight: 600; color: var(--theme-text); text-transform: uppercase; letter-spacing: 0.05em;">Duration</th>
                                 <th style="padding: 0.75rem 1rem; text-align: center; font-size: calc(var(--theme-font-size) - 1px); font-weight: 600; color: var(--theme-text); text-transform: uppercase; letter-spacing: 0.05em;">Billable</th>
+                                <th style="padding: 0.75rem 1rem; text-align: center; font-size: calc(var(--theme-font-size) - 1px); font-weight: 600; color: var(--theme-text); text-transform: uppercase; letter-spacing: 0.05em;">Deferred</th>
                                 <th style="padding: 0.75rem 1rem; text-align: center; font-size: calc(var(--theme-font-size) - 1px); font-weight: 600; color: var(--theme-text); text-transform: uppercase; letter-spacing: 0.05em;">Status</th>
                             </tr>
                         </thead>
@@ -1210,9 +1177,15 @@
 
         {{-- User Statistics Section --}}
         <div id="time-entries-user-stats" class="hidden border-t" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem; background-color: rgba(var(--theme-primary-rgb), 0.02);">
-            <h4 style="font-size: calc(var(--theme-font-size) + 2px); font-weight: 600; color: var(--theme-text); margin-bottom: 1rem;">
-                <i class="fas fa-users mr-2"></i>Hours per User
-            </h4>
+            <div style="margin-bottom: 1rem;">
+                <h4 style="font-size: calc(var(--theme-font-size) + 2px); font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                    <i class="fas fa-users mr-2"></i>Hours per User
+                </h4>
+                <p style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); margin: 0;">
+                    <i class="fas fa-info-circle mr-1"></i>
+                    Showing only hours logged in this month (deferred entries from previous months are not included)
+                </p>
+            </div>
             <div id="user-stats-list" class="space-y-2">
                 {{-- Populated by JavaScript --}}
             </div>
@@ -1237,7 +1210,7 @@
 
 {{-- Task/Milestone Time Entries Modal --}}
 <div id="taskTimeEntriesModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="if(event.target === this) closeTaskTimeEntriesModal()">
-    <div class="bg-white rounded-xl shadow-2xl" style="width: 95%; max-width: 900px; max-height: 85vh; overflow-y: auto;">
+    <div class="bg-white shadow-2xl" style="width: 95%; max-width: 900px; max-height: 85vh; overflow-y: auto; border-radius: var(--theme-border-radius);">
         {{-- Modal Header --}}
         <div class="border-b sticky top-0 bg-white z-10" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
             <div>
@@ -1316,7 +1289,7 @@
 
 {{-- Team Management Modal --}}
 <div id="teamModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onclick="if(event.target === this) closeTeamModal()">
-    <div class="bg-white rounded-xl shadow-2xl" style="width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto;">
+    <div class="bg-white shadow-2xl" style="width: 90%; max-width: 600px; max-height: 80vh; overflow-y: auto; border-radius: var(--theme-border-radius);">
         {{-- Modal Header --}}
         <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: white; z-index: 10;">
             <h3 style="font-size: calc(var(--theme-font-size) + 6px); font-weight: 600; color: var(--theme-text); margin: 0;">Manage Team Members</h3>
@@ -1363,6 +1336,135 @@
 <script>
 let isEditing = false;
 
+// Toggle Additional Costs section
+function toggleAdditionalCosts() {
+    const content = document.getElementById('additional-costs-content');
+    const chevron = document.getElementById('additional-costs-chevron');
+    const summary = document.getElementById('additional-costs-summary');
+    const actionBtn = document.getElementById('additional-costs-action-btn');
+
+    if (content.classList.contains('hidden')) {
+        // Uitklappen - verberg summary, toon button
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+        if (summary) summary.classList.add('hidden');
+        if (actionBtn) actionBtn.classList.remove('hidden');
+    } else {
+        // Inklappen - toon summary, verberg button
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+        if (summary) summary.classList.remove('hidden');
+        if (actionBtn) actionBtn.classList.add('hidden');
+    }
+}
+
+// Toggle Project Structure section
+function toggleProjectStructure() {
+    const content = document.getElementById('project-structure-content');
+    const chevron = document.getElementById('project-structure-chevron');
+    const summary = document.getElementById('project-structure-summary');
+    const actionBtn = document.getElementById('project-structure-action-btn');
+
+    if (content.classList.contains('hidden')) {
+        // Uitklappen - verberg summary, toon button
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+        if (summary) summary.classList.add('hidden');
+        if (actionBtn) actionBtn.classList.remove('hidden');
+    } else {
+        // Inklappen - toon summary, verberg button
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+        if (summary) summary.classList.remove('hidden');
+        if (actionBtn) actionBtn.classList.add('hidden');
+    }
+}
+
+// Toggle Companies section
+function toggleCompanies() {
+    const content = document.getElementById('companies-content');
+    const chevron = document.getElementById('companies-chevron');
+    const summary = document.getElementById('companies-summary');
+    const actionBtn = document.getElementById('companies-action-btn');
+
+    if (content.classList.contains('hidden')) {
+        // Uitklappen - verberg summary, toon button
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+        if (summary) summary.classList.add('hidden');
+        if (actionBtn) actionBtn.classList.remove('hidden');
+    } else {
+        // Inklappen - toon summary, verberg button
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+        if (summary) summary.classList.remove('hidden');
+        if (actionBtn) actionBtn.classList.add('hidden');
+    }
+}
+
+// Toggle Team Members section
+function toggleTeamMembers() {
+    const content = document.getElementById('team-members-content');
+    const chevron = document.getElementById('team-members-chevron');
+    const summary = document.getElementById('team-members-summary');
+    const actionBtn = document.getElementById('team-members-action-btn');
+
+    if (content.classList.contains('hidden')) {
+        // Uitklappen - verberg summary, toon button
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+        if (summary) summary.classList.add('hidden');
+        if (actionBtn) actionBtn.classList.remove('hidden');
+    } else {
+        // Inklappen - toon summary, verberg button
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+        if (summary) summary.classList.remove('hidden');
+        if (actionBtn) actionBtn.classList.add('hidden');
+    }
+}
+
+// Toggle Recurring Settings section
+function toggleRecurringSettings() {
+    const content = document.getElementById('recurring-settings-content');
+    const chevron = document.getElementById('recurring-settings-chevron');
+    const summary = document.getElementById('recurring-settings-summary');
+    const actionBtn = document.getElementById('recurring-settings-action-btn');
+
+    if (content.classList.contains('hidden')) {
+        // Uitklappen - verberg summary, toon button
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+        if (summary) summary.classList.add('hidden');
+        if (actionBtn) actionBtn.classList.remove('hidden');
+    } else {
+        // Inklappen - toon summary, verberg button
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+        if (summary) summary.classList.remove('hidden');
+        if (actionBtn) actionBtn.classList.add('hidden');
+    }
+}
+
+// Toggle Project Activity section
+function toggleProjectActivity() {
+    const content = document.getElementById('project-activity-content');
+    const chevron = document.getElementById('project-activity-chevron');
+    const summary = document.getElementById('project-activity-summary');
+
+    if (content.classList.contains('hidden')) {
+        // Uitklappen - verberg summary (geen action button bij Activity)
+        content.classList.remove('hidden');
+        chevron.classList.add('rotate-180');
+        if (summary) summary.classList.add('hidden');
+    } else {
+        // Inklappen - toon summary
+        content.classList.add('hidden');
+        chevron.classList.remove('rotate-180');
+        if (summary) summary.classList.remove('hidden');
+    }
+}
+
 function toggleEdit() {
     isEditing = true;
     document.getElementById('edit-btn').classList.add('hidden');
@@ -1395,7 +1497,16 @@ function saveEdit() {
     const data = {};
     formData.forEach((value, key) => {
         if (value !== '') {
-            data[key] = value;
+            // Handle array fields (like company_ids[])
+            if (key.endsWith('[]')) {
+                const arrayKey = key.slice(0, -2); // Remove []
+                if (!data[arrayKey]) {
+                    data[arrayKey] = [];
+                }
+                data[arrayKey].push(value);
+            } else {
+                data[key] = value;
+            }
         }
     });
 
@@ -1403,6 +1514,12 @@ function saveEdit() {
     const feeRolloverCheckbox = form.querySelector('input[name="fee_rollover_enabled"]');
     if (feeRolloverCheckbox) {
         data.fee_rollover_enabled = feeRolloverCheckbox.checked ? 1 : 0;
+    }
+
+    // Handle companies multi-select (get all selected values)
+    const companiesSelect = form.querySelector('select[name="company_ids[]"]');
+    if (companiesSelect) {
+        data.company_ids = Array.from(companiesSelect.selectedOptions).map(option => option.value);
     }
 
     // Show loading
@@ -1489,78 +1606,6 @@ function showErrorMessage(message) {
         msg.style.opacity = '0';
         setTimeout(() => msg.remove(), 300);
     }, 4000);
-}
-
-// Customer Edit Functions
-let isEditingCustomer = false;
-
-function toggleCustomerEdit() {
-    isEditingCustomer = true;
-    document.getElementById('edit-customer-btn').classList.add('hidden');
-    document.getElementById('edit-customer-actions').classList.remove('hidden');
-
-    // Hide all customer-field-view, show all customer-field-edit
-    document.querySelectorAll('.customer-field-view').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.customer-field-edit').forEach(el => el.classList.remove('hidden'));
-}
-
-function cancelCustomerEdit() {
-    isEditingCustomer = false;
-    document.getElementById('edit-customer-btn').classList.remove('hidden');
-    document.getElementById('edit-customer-actions').classList.add('hidden');
-
-    // Show all customer-field-view, hide all customer-field-edit
-    document.querySelectorAll('.customer-field-view').forEach(el => el.classList.remove('hidden'));
-    document.querySelectorAll('.customer-field-edit').forEach(el => el.classList.add('hidden'));
-
-    // Reset form
-    document.getElementById('customer-form').reset();
-}
-
-function saveCustomerEdit() {
-    const form = document.getElementById('customer-form');
-    const formData = new FormData(form);
-
-    // Convert to JSON
-    const data = {};
-    formData.forEach((value, key) => {
-        if (value !== '') {
-            data[key] = value;
-        }
-    });
-
-    // Show loading
-    const saveBtn = event.target;
-    const originalHTML = saveBtn.innerHTML;
-    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Saving...';
-    saveBtn.disabled = true;
-
-    fetch('{{ route("customers.update-inline", $project->customer) }}', {
-        method: 'PATCH',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-            'Accept': 'application/json'
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showSuccessMessage(data.message || 'Customer updated successfully');
-            setTimeout(() => location.reload(), 1000);
-        } else {
-            showErrorMessage(data.message || 'Failed to update customer');
-            saveBtn.innerHTML = originalHTML;
-            saveBtn.disabled = false;
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        showErrorMessage('An error occurred while saving');
-        saveBtn.innerHTML = originalHTML;
-        saveBtn.disabled = false;
-    });
 }
 
 // Team Modal Functions
@@ -1714,6 +1759,45 @@ function loadTimeEntries() {
     });
 }
 
+// Helper functie om defer informatie HTML te genereren
+function getDeferInfoHTML(entry) {
+    let deferHTML = '';
+
+    // Currently deferred (will be invoiced later)
+    if (entry.was_deferred && entry.deferred_at) {
+        deferHTML += '<div style="font-size: calc(var(--theme-font-size) - 4px); color: var(--theme-text-muted); margin-top: 0.25rem;">';
+        deferHTML += `Deferred on ${entry.deferred_at}`;
+
+        if (entry.invoice_period_start) {
+            deferHTML += `<br><strong style="color: #f97316;">→ Moved to: ${entry.invoice_period_start}</strong>`;
+            if (entry.invoice_number) {
+                deferHTML += ` (Invoice #${entry.invoice_number})`;
+            }
+        }
+
+        if (entry.defer_reason) {
+            deferHTML += `<br>${entry.defer_reason}`;
+        }
+
+        deferHTML += '</div>';
+    }
+
+    // Previously deferred (was moved FROM an earlier month)
+    if (entry.was_previously_deferred && entry.invoice_period_start && entry.entry_month !== entry.invoice_period_start) {
+        deferHTML += '<div style="font-size: calc(var(--theme-font-size) - 4px); color: var(--theme-text-muted); margin-top: 0.25rem; padding: 0.25rem 0.5rem; background-color: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 4px;">';
+        deferHTML += `<strong style="color: #3b82f6;">⚠️ NOT invoiced in ${entry.entry_month}</strong>`;
+        deferHTML += `<br>Moved to ${entry.invoice_period_start}`;
+
+        if (entry.invoice_number) {
+            deferHTML += ` (Invoice #${entry.invoice_number})`;
+        }
+
+        deferHTML += '</div>';
+    }
+
+    return deferHTML;
+}
+
 function renderTimeEntries(entries, stats, userStats) {
     // Hide loading
     document.getElementById('time-entries-loading').classList.add('hidden');
@@ -1725,8 +1809,9 @@ function renderTimeEntries(entries, stats, userStats) {
     // Show and update stats
     document.getElementById('time-entries-stats').style.display = 'block';
     document.getElementById('stat-total-entries').textContent = stats.total_entries;
+    document.getElementById('stat-current-month-entries').textContent = stats.current_month_entries || 0;
+    document.getElementById('stat-deferred-entries').textContent = stats.deferred_entries || 0;
     document.getElementById('stat-total-hours').textContent = stats.total_hours + 'h';
-    document.getElementById('stat-total-duration').textContent = stats.total_duration_formatted;
 
     // Check if empty
     if (entries.length === 0) {
@@ -1761,6 +1846,35 @@ function renderTimeEntries(entries, stats, userStats) {
             ? '<span class="px-2 py-0.5 rounded text-xs" style="background-color: rgba(var(--theme-success-rgb), 0.1); color: var(--theme-success); font-weight: 500;"><i class="fas fa-check-circle mr-1"></i>Yes</span>'
             : '<span class="px-2 py-0.5 rounded text-xs" style="background-color: rgba(var(--theme-text-muted-rgb), 0.1); color: var(--theme-text-muted); font-weight: 500;">No</span>';
 
+        // DEBUG: Log defer status en previous month imports
+        if (entry.invoice_id || entry.from_previous_month) {
+            console.log('Entry', entry.id, '- was_deferred:', entry.was_deferred, 'was_previously_deferred:', entry.was_previously_deferred, 'from_previous_month:', entry.from_previous_month, 'entry_month:', entry.entry_month, 'invoice_period_start:', entry.invoice_period_start);
+        }
+
+        // Deferred badge met tooltip - HARDCODED HEX KLEUREN
+        let deferredBadge = '<span style="color: #9ca3af; font-size: 14px;">-</span>';
+        if (entry.was_deferred && entry.invoice_period_start) {
+            // Entry is deferred to next month - ORANJE
+            deferredBadge = `<div style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                <span style="padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 11px; background-color: #fed7aa; color: #ea580c; font-weight: 600; border: 1px solid #fdba74; white-space: nowrap;">
+                    <i class="fas fa-arrow-right" style="margin-right: 0.25rem;"></i>DEFERRED
+                </span>
+                <span style="font-size: 11px; color: #6b7280; white-space: nowrap;">
+                    → ${entry.invoice_period_start}
+                </span>
+            </div>`;
+        } else if (entry.was_previously_deferred && entry.invoice_period_start && entry.entry_month !== entry.invoice_period_start) {
+            // Entry was moved FROM an earlier month (imported from defer) - BLAUW
+            deferredBadge = `<div style="display: flex; flex-direction: column; align-items: center; gap: 0.25rem;">
+                <span style="padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 11px; background-color: #dbeafe; color: #2563eb; font-weight: 600; border: 1px solid #93c5fd; white-space: nowrap;">
+                    <i class="fas fa-info-circle" style="margin-right: 0.25rem;"></i>FROM ${entry.entry_month}
+                </span>
+                <span style="font-size: 11px; color: #6b7280; white-space: nowrap;">
+                    Billed in ${entry.invoice_period_start}
+                </span>
+            </div>`;
+        }
+
         // Work item (milestone → task → subtask hierarchy)
         let workItem = '-';
         if (entry.subtask !== '-') {
@@ -1791,12 +1905,16 @@ function renderTimeEntries(entries, stats, userStats) {
                     <div style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted); max-width: 300px; white-space: normal; line-height: 1.4;">
                         ${entry.description || '<em style="color: var(--theme-text-muted);">No description</em>'}
                     </div>
+                    ${getDeferInfoHTML(entry)}
                 </td>
                 <td style="padding: 0.75rem 1rem; text-align: center;">
                     <span style="font-size: var(--theme-font-size); color: var(--theme-text); font-weight: 600; font-family: monospace;">${entry.duration_formatted}</span>
                 </td>
                 <td style="padding: 0.75rem 1rem; text-align: center;">
                     ${billableBadge}
+                </td>
+                <td style="padding: 0.75rem 1rem; text-align: center;">
+                    ${deferredBadge}
                 </td>
                 <td style="padding: 0.75rem 1rem; text-align: center;">
                     <span class="px-2 py-0.5 rounded text-xs" style="${statusStyle} font-weight: 500; text-transform: capitalize;">
@@ -2069,14 +2187,14 @@ textarea:focus {
 {{-- Recurring Settings Edit Modal --}}
 @if($project->is_recurring)
 <div id="recurringSettingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-    <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4">
+    <div class="bg-white shadow-2xl max-w-2xl w-full mx-4" style="border-radius: var(--theme-border-radius);">
         <form id="recurringSettingsForm" action="{{ route('projects.updateRecurringSettings', $project) }}" method="POST">
             @csrf
             @method('PUT')
 
-            <div class="border-b border-gray-200 px-6 py-4">
-                <h3 class="text-lg font-semibold text-gray-900">
-                    <i class="fas fa-sync-alt mr-2 text-purple-500"></i>
+            <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem;">
+                <h3 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: var(--theme-text);">
+                    <i class="fas fa-sync-alt mr-2" style="color: var(--theme-accent);"></i>
                     Edit Recurring Settings
                 </h3>
             </div>
@@ -2085,7 +2203,7 @@ textarea:focus {
                 {{-- Base Name --}}
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">
-                        Base Project Name <span class="text-red-500">*</span>
+                        Base Project Name <span class="style="color: var(--theme-danger);"">*</span>
                     </label>
                     <input type="text"
                            name="recurring_base_name"
@@ -2100,7 +2218,7 @@ textarea:focus {
                     {{-- Frequency --}}
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">
-                            Frequency <span class="text-red-500">*</span>
+                            Frequency <span class="style="color: var(--theme-danger);"">*</span>
                         </label>
                         <select name="recurring_frequency"
                                 required
@@ -2182,18 +2300,18 @@ textarea:focus {
                 </div>
 
                 {{-- Disable Recurring Option --}}
-                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                <div style="background-color: rgba(var(--theme-danger-rgb), 0.05); border: 1px solid rgba(var(--theme-danger-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
                     <div class="flex items-start">
                         <input type="checkbox"
                                name="disable_recurring"
                                id="disable_recurring"
                                value="1"
-                               class="mt-1 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded">
+                               style="margin-top: 0.25rem; height: 1rem; width: 1rem;">
                         <div class="ml-3">
-                            <label for="disable_recurring" class="text-sm font-medium text-red-900">
+                            <label for="disable_recurring" style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-danger); cursor: pointer;">
                                 Disable Recurring
                             </label>
-                            <p class="text-xs text-red-700 mt-1">
+                            <p style="font-size: calc(var(--theme-font-size) - 2px); color: var(--theme-text); margin-top: 0.25rem;">
                                 Check this to stop automatic project generation. Existing generated projects will not be affected.
                             </p>
                         </div>
@@ -2201,14 +2319,16 @@ textarea:focus {
                 </div>
             </div>
 
-            <div class="border-t border-gray-200 px-6 py-4 flex items-center justify-end gap-3">
+            <div class="border-t flex items-center justify-end gap-3" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem;">
                 <button type="button"
                         onclick="closeRecurringSettingsModal()"
-                        class="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+                        class="transition-colors"
+                        style="padding: 0.5rem 1rem; font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text); background-color: rgba(var(--theme-text-muted-rgb), 0.1); border: none; border-radius: var(--theme-border-radius); cursor: pointer;">
                     Cancel
                 </button>
                 <button type="submit"
-                        class="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
+                        class="transition-colors"
+                        style="padding: 0.5rem 1rem; font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: white; background-color: var(--theme-accent); border: none; border-radius: var(--theme-border-radius); cursor: pointer;">
                     <i class="fas fa-save mr-1"></i>
                     Save Settings
                 </button>
@@ -2331,6 +2451,1569 @@ function confirmMasterTemplateToggle(willBecomeMaster) {
     }
 }
 </script>
+@endif
+
+{{-- Help Modal - Recurring Projects Complete Guide --}}
+<div id="help-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="padding: 1rem;">
+    <div class="w-full shadow-lg flex flex-col" style="background-color: var(--theme-bg); border-radius: var(--theme-border-radius); max-width: 72rem; max-height: 90vh; overflow: hidden;">
+        {{-- Header - Fixed --}}
+        <div class="border-b flex justify-between items-center flex-shrink-0" style="padding: 1.5rem; border-color: rgba(203, 213, 225, 0.3); background-color: var(--theme-primary);">
+            <div class="flex items-center gap-3">
+                <i class="fas fa-sync-alt" style="font-size: calc(var(--theme-font-size) + 6px); color: white;"></i>
+                <h3 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 600; color: white;">Recurring Projects - Complete Guide</h3>
+            </div>
+            <button onclick="closeHelpModal()" style="color: white; background: none; border: none; cursor: pointer; opacity: 0.8; transition: opacity 0.2s;">
+                <i class="fas fa-times" style="font-size: calc(var(--theme-font-size) + 4px);"></i>
+            </button>
+        </div>
+        {{-- Content - Scrollable --}}
+        <div class="overflow-y-auto flex-1" style="padding: 1.5rem; font-size: var(--theme-font-size);">
+            <div class="space-y-8">
+                {{-- Introduction --}}
+                <div class="shadow-sm" style="background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.1) 0%, rgba(var(--theme-primary-rgb), 0.05) 100%); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); border-left: 4px solid var(--theme-primary);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 6px); font-weight: 700; color: var(--theme-primary); margin-bottom: 0.75rem;">
+                        <i class="fas fa-sync-alt mr-2" style="color: var(--theme-primary);"></i>What are Recurring Projects?
+                    </h4>
+                    <p style="color: var(--theme-text); line-height: 1.6; margin-bottom: 0.75rem; font-size: calc(var(--theme-font-size) + 1px);">
+                        <strong>Recurring Projects</strong> is a powerful automation system that automatically creates new projects for future periods (monthly or quarterly).
+                        Perfect for retainer work, ongoing maintenance, subscription services, or any work that repeats regularly.
+                    </p>
+                    <div style="background-color: white; border: 2px solid rgba(var(--theme-primary-rgb), 0.3); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); margin-top: 0.75rem;">
+                        <p style="color: var(--theme-primary); font-size: var(--theme-font-size); font-weight: 500;">
+                            <i class="fas fa-magic mr-2"></i><strong>Example:</strong> Create "Website Maintenance Aug 2025" once, and the system automatically generates
+                            "Website Maintenance Sep 2025", "Website Maintenance Oct 2025", etc. - each with the same structure, team, and budget!
+                        </p>
+                    </div>
+                </div>
+
+                {{-- Master vs Child Projects --}}
+                <div class="bg-white shadow-sm" style="border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-project-diagram mr-2" style="color: var(--theme-primary);"></i>Master vs Child Projects
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div style="border: 2px solid rgba(var(--theme-primary-rgb), 0.3); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); background-color: rgba(var(--theme-primary-rgb), 0.05);">
+                            <div class="flex items-center mb-2">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 9999px; font-size: calc(var(--theme-font-size) - 2px); font-weight: 700; margin-right: 0.5rem;">MASTER</span>
+                                <span style="font-weight: 600; color: var(--theme-text);">Recurring Badge</span>
+                            </div>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                The <strong>original project</strong> you create with "recurring" enabled. This is the template that gets copied.
+                            </p>
+                            <ul class="mt-3 space-y-1" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <li><i class="fas fa-check mr-2" style="color: var(--theme-success);"></i>Status must be <strong>"Active"</strong></li>
+                                <li><i class="fas fa-check mr-2" style="color: var(--theme-success);"></i>Has recurring settings (frequency, base name)</li>
+                                <li><i class="fas fa-check mr-2" style="color: var(--theme-success);"></i>Can be edited or disabled anytime</li>
+                            </ul>
+                        </div>
+                        <div style="border: 2px solid rgba(var(--theme-success-rgb), 0.3); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); background-color: rgba(var(--theme-success-rgb), 0.05);">
+                            <div class="flex items-center mb-2">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-success); color: white; border-radius: 9999px; font-size: calc(var(--theme-font-size) - 2px); font-weight: 700; margin-right: 0.5rem;">AUTO</span>
+                                <span style="font-weight: 600; color: var(--theme-text);">Generated Badge</span>
+                            </div>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                <strong>Automatically created</strong> copies for future periods. These are normal projects you can use and edit.
+                            </p>
+                            <ul class="mt-3 space-y-1" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <li><i class="fas fa-check mr-2" style="color: var(--theme-success);"></i>Always status <strong>"Active"</strong></li>
+                                <li><i class="fas fa-check mr-2" style="color: var(--theme-success);"></i>Complete copy (milestones, tasks, team, budget)</li>
+                                <li><i class="fas fa-check mr-2" style="color: var(--theme-success);"></i>Work on them like any normal project</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- How It Works --}}
+                <div class="shadow-sm" style="background-color: rgba(var(--theme-primary-rgb), 0.03); border: 1px solid rgba(var(--theme-primary-rgb), 0.15); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-primary); margin-bottom: 0.75rem;">
+                        <i class="fas fa-cogs mr-2" style="color: var(--theme-primary);"></i>How the Automation Works
+                    </h4>
+                    <div class="space-y-4">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 flex items-center justify-center font-bold mr-3" style="width: 2rem; height: 2rem; background-color: var(--theme-primary); color: white; border-radius: 50%;">1</div>
+                            <div>
+                                <p style="font-weight: 600; color: var(--theme-text);">System Checks Daily</p>
+                                <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                    A scheduled task runs every day and checks all active recurring master projects.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 flex items-center justify-center font-bold mr-3" style="width: 2rem; height: 2rem; background-color: var(--theme-primary); color: white; border-radius: 50%;">2</div>
+                            <div>
+                                <p style="font-weight: 600; color: var(--theme-text);">Time Window Check</p>
+                                <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                    If we're within the "days before" window (e.g., 7 days before next month), a new project is created.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 flex items-center justify-center font-bold mr-3" style="width: 2rem; height: 2rem; background-color: var(--theme-primary); color: white; border-radius: 50%;">3</div>
+                            <div>
+                                <p style="font-weight: 600; color: var(--theme-text);">Complete Duplication</p>
+                                <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                    Copies milestones, tasks, subtasks, team members, billing companies, and budget settings.
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 flex items-center justify-center font-bold mr-3" style="width: 2rem; height: 2rem; background-color: var(--theme-primary); color: white; border-radius: 50%;">4</div>
+                            <div>
+                                <p style="font-weight: 600; color: var(--theme-text);">Automatic Naming</p>
+                                <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                    New project gets named: "[Base Name] [Month] [Year]" (e.g., "Website Maintenance Nov 2025")
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Step-by-Step Creation Guide --}}
+                <div class="shadow-sm" style="background: linear-gradient(135deg, rgba(var(--theme-accent-rgb), 0.08) 0%, rgba(var(--theme-accent-rgb), 0.03) 100%); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); border: 2px solid rgba(var(--theme-accent-rgb), 0.25);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-primary); margin-bottom: 0.75rem;">
+                        <i class="fas fa-tasks mr-2" style="color: var(--theme-primary);"></i>Step-by-Step: Creating Your First Recurring Project
+                    </h4>
+                    <div class="space-y-3">
+                        <div style="background-color: white; border-left: 4px solid var(--theme-primary); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 0.375rem; font-size: calc(var(--theme-font-size) - 1px); margin-right: 0.5rem;">STEP 1</span> Click "New Project"
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                Fill in basic information: Customer, Project Name (with month/year like "SEO Oct 2025"), Start/End dates.
+                            </p>
+                        </div>
+                        <div style="background-color: white; border-left: 4px solid var(--theme-primary); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 0.375rem; font-size: calc(var(--theme-font-size) - 1px); margin-right: 0.5rem;">STEP 2</span> Enable Recurring
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                Scroll to "Recurring Project Settings" section and check ✓ "Make this a recurring project"
+                            </p>
+                        </div>
+                        <div style="background-color: white; border-left: 4px solid var(--theme-primary); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 0.375rem; font-size: calc(var(--theme-font-size) - 1px); margin-right: 0.5rem;">STEP 3</span> Configure Settings
+                            </p>
+                            <ul style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); list-style: none; padding-left: 0;" class="space-y-2 mt-2">
+                                <li><strong style="color: var(--theme-primary);">Base Name:</strong> "SEO" (without month/year - that's added automatically)</li>
+                                <li><strong style="color: var(--theme-primary);">Frequency:</strong> Monthly or Quarterly</li>
+                                <li><strong style="color: var(--theme-primary);">Days Before:</strong> 7 (create new project 7 days before next period)</li>
+                                <li><strong style="color: var(--theme-primary);">End Date:</strong> Optional stop date (leave empty for infinite)</li>
+                            </ul>
+                        </div>
+                        <div style="background-color: white; border-left: 4px solid var(--theme-primary); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 0.375rem; font-size: calc(var(--theme-font-size) - 1px); margin-right: 0.5rem;">STEP 4</span> Add Team & Budget
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                Select team members and set monthly budget. These will be copied to all future projects.
+                            </p>
+                        </div>
+                        <div style="background-color: white; border-left: 4px solid var(--theme-primary); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 0.375rem; font-size: calc(var(--theme-font-size) - 1px); margin-right: 0.5rem;">STEP 5</span> Create Project
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                Click "Create Project". Your master project is created with status "Active" (required for automation).
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-success-rgb), 0.1); border: 2px solid rgba(var(--theme-success-rgb), 0.3); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); text-align: center;">
+                            <p style="color: var(--theme-success); font-weight: 700; font-size: calc(var(--theme-font-size) + 1px);">
+                                <i class="fas fa-check-circle mr-2"></i>Done! The system will now automatically create future projects.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Settings Explained --}}
+                <div class="bg-white shadow-sm" style="border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-sliders-h mr-2" style="color: var(--theme-warning);"></i>Recurring Settings Explained
+                    </h4>
+                    <div class="space-y-3">
+                        <div style="background-color: rgba(203, 213, 225, 0.1); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <i class="fas fa-tag mr-2" style="color: var(--theme-primary);"></i>Base Project Name
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                The name without time period. Example: "Website Maintenance" becomes "Website Maintenance Nov 2025", "Website Maintenance Dec 2025", etc.
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(203, 213, 225, 0.1); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <i class="fas fa-calendar-alt mr-2" style="color: var(--theme-primary);"></i>Frequency
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>Monthly:</strong> Creates projects for each month (Aug 2025, Sep 2025, Oct 2025...)<br>
+                                <strong>Quarterly:</strong> Creates projects per quarter (Q3 2025, Q4 2025, Q1 2026...)
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(203, 213, 225, 0.1); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <i class="fas fa-clock mr-2" style="color: var(--theme-success);"></i>Create New Project (Days Before)
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                How many days before the new period should the project be created. Default: 7 days.<br>
+                                <strong>Example:</strong> For November project with 7 days → created around October 24th.
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(203, 213, 225, 0.1); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <i class="fas fa-stop-circle mr-2" style="color: var(--theme-danger);"></i>Stop Recurring On (Optional)
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                End date for automatic generation. Leave empty to continue indefinitely.<br>
+                                <strong>Use case:</strong> 6-month contract → set end date to stop after 6 months.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Editing and Disabling --}}
+                <div class="bg-white shadow-sm" style="border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-edit mr-2" style="color: var(--theme-primary);"></i>Editing & Disabling Recurring Projects
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <i class="fas fa-pencil-alt mr-2" style="color: var(--theme-primary);"></i>Edit Settings
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                1. Open the master project (with RECURRING badge)<br>
+                                2. Find "Recurring Project Settings" card<br>
+                                3. Click "Edit Settings" button<br>
+                                4. Update any setting (base name, frequency, days before, end date)<br>
+                                5. Save changes
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-danger-rgb), 0.05); border: 1px solid rgba(var(--theme-danger-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                <i class="fas fa-ban mr-2" style="color: var(--theme-danger);"></i>Disable Recurring
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                1. Open the master project<br>
+                                2. Click "Edit Settings" in Recurring card<br>
+                                3. Check ✓ "Disable recurring" at bottom<br>
+                                4. Save - No more automatic projects<br>
+                                <strong>Note:</strong> Existing auto-generated projects remain unchanged.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Practical Examples --}}
+                <div class="bg-white shadow-sm" style="border: 2px solid rgba(var(--theme-primary-rgb), 0.3); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-lightbulb mr-2" style="color: var(--theme-warning);"></i>Practical Use Cases & Examples
+                    </h4>
+                    <div class="space-y-4">
+                        <div style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                📱 Monthly Retainer Client
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                <strong>Setup:</strong> Base Name: "Client X Retainer", Frequency: Monthly, Budget: €5,000/month<br>
+                                <strong>Result:</strong> Automatic projects for every month with same tasks, team, and budget<br>
+                                <strong>Benefits:</strong> No manual work, consistent project structure, automated budget tracking
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-success-rgb), 0.05); border: 1px solid rgba(var(--theme-success-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                🌐 Website Maintenance
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                <strong>Setup:</strong> Base Name: "Website Maintenance", Frequency: Monthly, Days Before: 3<br>
+                                <strong>Milestones:</strong> Security Updates, Content Updates, Performance Check, Backup Verification<br>
+                                <strong>Result:</strong> Ready-to-work maintenance project created 3 days before each month
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-primary-rgb), 0.05); border: 1px solid rgba(var(--theme-primary-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                📊 Quarterly Reporting
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                <strong>Setup:</strong> Base Name: "Quarterly Business Review", Frequency: Quarterly, Days Before: 14<br>
+                                <strong>Tasks:</strong> Data collection, Analysis, Report creation, Client presentation<br>
+                                <strong>Result:</strong> Q1, Q2, Q3, Q4 projects created 2 weeks before quarter start
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-warning-rgb), 0.05); border: 1px solid rgba(var(--theme-warning-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.5rem;">
+                                🎯 Multiple Services for Same Client
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); line-height: 1.5;">
+                                <strong>Setup:</strong> Create 2 master projects:<br>
+                                • "Client Y - SEO" (€3,000/month) - SEO team<br>
+                                • "Client Y - Development" (€8,000/month) - Dev team<br>
+                                <strong>Result:</strong> Separate tracking, separate teams, separate budgets - all automatic!
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Best Practices --}}
+                <div class="shadow-sm" style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 2px solid rgba(var(--theme-accent-rgb), 0.3); border-radius: var(--theme-border-radius); padding: 1.25rem;">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-star mr-2" style="color: var(--theme-warning);"></i>Best Practices & Tips
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="bg-white" style="border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);">
+                                ✅ DO: Use clear base names
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
+                                "Client Name - Service Type" makes it easy to identify projects
+                            </p>
+                        </div>
+                        <div class="bg-white" style="border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);">
+                                ✅ DO: Set up milestones on master
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
+                                Define all recurring tasks once - they copy to all future projects
+                            </p>
+                        </div>
+                        <div class="bg-white" style="border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);">
+                                ✅ DO: Keep master status Active
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
+                                Only active masters generate new projects. Pause by changing status.
+                            </p>
+                        </div>
+                        <div class="bg-white" style="border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-primary); font-size: calc(var(--theme-font-size) - 1px);">
+                                ✅ DO: Review 'days before' setting
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
+                                7 days is good default, but adjust based on your planning needs
+                            </p>
+                        </div>
+                        <div class="bg-white" style="border: 1px solid rgba(var(--theme-danger-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-danger); font-size: calc(var(--theme-font-size) - 1px);">
+                                ❌ DON'T: Delete master projects
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
+                                Disable recurring instead - keeps history and allows re-enabling
+                            </p>
+                        </div>
+                        <div class="bg-white" style="border: 1px solid rgba(var(--theme-danger-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                            <p style="font-weight: 600; color: var(--theme-danger); font-size: calc(var(--theme-font-size) - 1px);">
+                                ❌ DON'T: Change status to draft/hold
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 2px);">
+                                Master must stay Active or automation stops
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Troubleshooting --}}
+                <div class="bg-white shadow-sm" style="border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-wrench mr-2" style="color: var(--theme-danger);"></i>Troubleshooting
+                    </h4>
+                    <div class="space-y-3">
+                        <div style="background-color: rgba(var(--theme-danger-rgb), 0.05); border-left: 4px solid var(--theme-danger); border-radius: var(--theme-border-radius); padding: 1rem;">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                ⚠️ New project not created automatically
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>Check:</strong> Master project status = "Active" ✓ | "Days before" window reached ✓ | End date not passed ✓
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-warning-rgb), 0.05); border-left: 4px solid var(--theme-warning); border-radius: var(--theme-border-radius); padding: 1rem;">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                ⚠️ Can't find my recurring project
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>Solution:</strong> Look for purple "RECURRING" badge in project list. Only master projects have this badge.
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-primary-rgb), 0.05); border-left: 4px solid var(--theme-primary); border-radius: var(--theme-border-radius); padding: 1rem;">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                ℹ️ Want to change structure for future projects
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>Solution:</strong> Edit milestones/tasks on the master project. Changes apply to new projects, not existing ones.
+                            </p>
+                        </div>
+                        <div style="background-color: rgba(var(--theme-success-rgb), 0.05); border-left: 4px solid var(--theme-success); border-radius: var(--theme-border-radius); padding: 1rem;">
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                ℹ️ Client contract ended - stop automation
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>Solution:</strong> Open master → Edit Settings → Check "Disable recurring" → Save. Done!
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- FAQ --}}
+                <div class="bg-white shadow-sm" style="border-radius: var(--theme-border-radius); padding: var(--theme-card-padding);">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-question-circle mr-2" style="color: var(--theme-accent);"></i>Frequently Asked Questions
+                    </h4>
+                    <div class="space-y-4">
+                        <div>
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                Q: Can I have multiple recurring projects for the same customer?
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>A:</strong> Yes! Create separate master projects for each service. For example: "SEO Oct 2025" and "Development Oct 2025" both for same client.
+                            </p>
+                        </div>
+                        <div>
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                Q: What happens to existing auto-generated projects if I edit the master?
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>A:</strong> Nothing - they remain unchanged. Only NEW projects created after your edit will have the updated structure.
+                            </p>
+                        </div>
+                        <div>
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                Q: Can I manually create a project for a skipped month?
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>A:</strong> Yes - just create a regular project. The automation checks for existing projects and won't create duplicates.
+                            </p>
+                        </div>
+                        <div>
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                Q: Does the system send notifications when projects are created?
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>A:</strong> Currently no - check your project list regularly. Email notifications are planned for future updates.
+                            </p>
+                        </div>
+                        <div>
+                            <p style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">
+                                Q: Can I change from monthly to quarterly after creation?
+                            </p>
+                            <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);">
+                                <strong>A:</strong> Yes - use "Edit Settings" on master project and change frequency. Takes effect for next scheduled creation.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Visual Badge Reference --}}
+                <div style="background: linear-gradient(135deg, rgba(203, 213, 225, 0.2) 0%, rgba(203, 213, 225, 0.3) 100%); border: 2px solid rgba(203, 213, 225, 0.5); border-radius: var(--theme-border-radius); padding: 1.25rem;">
+                    <h4 style="font-size: calc(var(--theme-font-size) + 4px); font-weight: 700; color: var(--theme-text); margin-bottom: 0.75rem;">
+                        <i class="fas fa-tags mr-2" style="color: var(--theme-text-muted);"></i>Quick Badge Reference
+                    </h4>
+                    <div class="flex flex-wrap gap-4 items-center">
+                        <div class="flex items-center gap-2 bg-white shadow" style="border-radius: var(--theme-border-radius); padding: 0.75rem 1rem;">
+                            <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-primary); color: white; border-radius: 9999px; font-size: calc(var(--theme-font-size) - 1px); font-weight: 700;">RECURRING</span>
+                            <span style="color: var(--theme-text); font-size: calc(var(--theme-font-size) - 1px);">= Master Project (generates new)</span>
+                        </div>
+                        <div class="flex items-center gap-2 bg-white shadow" style="border-radius: var(--theme-border-radius); padding: 0.75rem 1rem;">
+                            <span style="padding: 0.25rem 0.75rem; background-color: var(--theme-success); color: white; border-radius: 9999px; font-size: calc(var(--theme-font-size) - 1px); font-weight: 700;">AUTO</span>
+                            <span style="color: var(--theme-text); font-size: calc(var(--theme-font-size) - 1px);">= Generated Project (normal work)</span>
+                        </div>
+                    </div>
+                    <p style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px); margin-top: 1rem;">
+                        <i class="fas fa-info-circle mr-1"></i>Both types appear in your regular project list and customer views. The badges help you identify their role.
+                    </p>
+                </div>
+
+            </div>
+        </div>
+        {{-- Footer - Fixed --}}
+        <div class="border-t flex flex-col sm:flex-row justify-between items-center gap-3 flex-shrink-0" style="padding: 1.25rem 1.5rem; background-color: var(--theme-primary); border-color: rgba(203, 213, 225, 0.3);">
+            <p style="color: white; font-size: calc(var(--theme-font-size) - 1px); margin: 0;">
+                <i class="fas fa-heart mr-1"></i>Need more help? Contact your administrator or check the system logs.
+            </p>
+            <button onclick="closeHelpModal()"
+                    class="font-medium bg-white transition-all shadow-lg flex-shrink-0"
+                    style="padding: 0.75rem 1.5rem; border-radius: var(--theme-border-radius); font-size: var(--theme-font-size); color: var(--theme-primary); border: none; cursor: pointer; white-space: nowrap;">
+                <i class="fas fa-check mr-2"></i>Got It, Thanks!
+            </button>
+        </div>
+    </div>
+</div>
+
+{{-- Create Cost Modal --}}
+<div id="createCostModal" class="hidden fixed inset-0 z-50 overflow-y-auto" style="background-color: rgba(0, 0, 0, 0.5);">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full" style="max-height: 90vh; overflow-y: auto;">
+            {{-- Modal Header --}}
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-lg z-10">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold" style="color: var(--theme-text);">
+                        <i class="fas fa-plus-circle mr-2" style="color: var(--theme-primary);"></i>
+                        Add Additional Cost
+                    </h3>
+                    <button onclick="closeCreateCostModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times fa-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            {{-- Modal Body --}}
+            <form id="createCostForm" class="px-6 py-4">
+                <div class="space-y-4">
+                    {{-- Name --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Cost Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="create_name" name="name" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="e.g., Server Hosting, SSL Certificate">
+                    </div>
+
+                    {{-- Description --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Description
+                        </label>
+                        <textarea id="create_description" name="description" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="Additional details about this cost..."></textarea>
+                    </div>
+
+                    {{-- Cost Type --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Cost Type <span class="text-red-500">*</span>
+                        </label>
+                        <select id="create_cost_type" name="cost_type" required onchange="toggleCreateCostTypeFields()"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="one_time">One-time Cost</option>
+                            <option value="monthly_recurring">Monthly Recurring</option>
+                        </select>
+                    </div>
+
+                    {{-- Fee Type --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Budget Impact <span class="text-red-500">*</span>
+                        </label>
+                        <select id="create_fee_type" name="fee_type" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="in_fee">Within Budget (counts toward monthly fee)</option>
+                            <option value="additional">Outside Budget (billed to project, not in monthly fee)</option>
+                        </select>
+                        <p class="text-xs mt-1" style="color: var(--theme-text-muted);">
+                            <strong>Within Budget:</strong> Counted in monthly budget tracking<br>
+                            <strong>Outside Budget:</strong> Billed to the project but does not count toward monthly fee limit
+                        </p>
+                    </div>
+
+                    {{-- Calculation Type --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Calculation Type <span class="text-red-500">*</span>
+                        </label>
+                        <select id="create_calculation_type" name="calculation_type" required onchange="toggleCreateCalculationFields()"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="fixed_amount">Fixed Amount</option>
+                            <option value="hourly_rate">Hourly Rate</option>
+                        </select>
+                    </div>
+
+                    {{-- Fixed Amount (shown by default) --}}
+                    <div id="create_fixed_amount_fields">
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Amount (€) <span class="text-red-500">*</span>
+                        </label>
+                        <input type="number" id="create_amount" name="amount" step="0.01" min="0"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="0.00">
+                    </div>
+
+                    {{-- Hourly Rate Fields (hidden by default) --}}
+                    <div id="create_hourly_rate_fields" class="hidden space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                                Hours <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" id="create_hours" name="hours" step="0.01" min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   placeholder="0.00">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                                Hourly Rate (€) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" id="create_hourly_rate" name="hourly_rate" step="0.01" min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   placeholder="0.00">
+                        </div>
+                    </div>
+
+                    {{-- Date --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Date <span class="text-red-500">*</span>
+                        </label>
+                        <input type="date" id="create_start_date" name="start_date" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+
+                    {{-- End Date (only for monthly_recurring) --}}
+                    <div id="create_end_date_field" class="hidden">
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            End Date (optional)
+                        </label>
+                        <input type="date" id="create_end_date" name="end_date"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <p class="text-xs mt-1" style="color: var(--theme-text-muted);">
+                            Leave empty for indefinite recurring cost
+                        </p>
+                    </div>
+
+                    {{-- Notes --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Internal Notes
+                        </label>
+                        <textarea id="create_notes" name="notes" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="Internal notes (not visible on invoices)"></textarea>
+                    </div>
+                </div>
+
+                {{-- Modal Footer --}}
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+                    <button type="button" onclick="closeCreateCostModal()"
+                            class="px-4 py-2 rounded-lg font-medium transition-colors"
+                            style="background-color: #e5e7eb; color: #6b7280;">
+                        Cancel
+                    </button>
+                    <button type="button" onclick="submitCreateCostForm()"
+                            class="px-4 py-2 rounded-lg font-medium text-white transition-colors"
+                            style="background-color: var(--theme-primary);">
+                        <i class="fas fa-plus mr-2"></i>
+                        Add Cost
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{{-- View Cost Modal (Read-Only) --}}
+<div id="viewCostModal" class="hidden fixed inset-0 z-50 overflow-y-auto" style="background-color: rgba(0, 0, 0, 0.5);">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full" style="max-height: 90vh; overflow-y: auto;">
+            {{-- Modal Header --}}
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-lg z-10">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold" style="color: var(--theme-text);">
+                        <i class="fas fa-eye mr-2" style="color: #3b82f6;"></i>
+                        View Additional Cost
+                    </h3>
+                    <button onclick="closeViewCostModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times fa-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            {{-- Modal Body --}}
+            <div class="px-6 py-4">
+                <div class="space-y-4">
+                    {{-- Cost Name --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                            Cost Name
+                        </label>
+                        <p id="view_name" class="text-base font-medium" style="color: var(--theme-text);"></p>
+                    </div>
+
+                    {{-- Description --}}
+                    <div id="view_description_wrapper" class="hidden">
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                            Description
+                        </label>
+                        <p id="view_description" class="text-sm" style="color: var(--theme-text);"></p>
+                    </div>
+
+                    {{-- Cost Type & Budget Impact --}}
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                                Cost Type
+                            </label>
+                            <p id="view_cost_type" class="text-base" style="color: var(--theme-text);"></p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                                Budget Impact
+                            </label>
+                            <p id="view_fee_type" class="text-base" style="color: var(--theme-text);"></p>
+                        </div>
+                    </div>
+
+                    {{-- Amount Details --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                            Amount
+                        </label>
+                        <p id="view_amount_details" class="text-xl font-bold" style="color: var(--theme-primary);"></p>
+                    </div>
+
+                    {{-- Dates --}}
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                                Date
+                            </label>
+                            <p id="view_start_date" class="text-base" style="color: var(--theme-text);"></p>
+                        </div>
+                        <div id="view_end_date_wrapper" class="hidden">
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                                End Date
+                            </label>
+                            <p id="view_end_date" class="text-base" style="color: var(--theme-text);"></p>
+                        </div>
+                    </div>
+
+                    {{-- Notes --}}
+                    <div id="view_notes_wrapper" class="hidden">
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text-muted);">
+                            Internal Notes
+                        </label>
+                        <p id="view_notes" class="text-sm" style="color: var(--theme-text);"></p>
+                    </div>
+                </div>
+
+                {{-- Modal Footer --}}
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+                    <button type="button" onclick="closeViewCostModal()"
+                            class="px-4 py-2 rounded-lg font-medium transition-colors"
+                            style="background-color: #e5e7eb; color: #6b7280;">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Edit Cost Modal --}}
+<div id="editCostModal" class="hidden fixed inset-0 z-50 overflow-y-auto" style="background-color: rgba(0, 0, 0, 0.5);">
+    <div class="flex items-center justify-center min-h-screen px-4">
+        <div class="relative bg-white rounded-lg shadow-xl max-w-2xl w-full" style="max-height: 90vh; overflow-y: auto;">
+            {{-- Modal Header --}}
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 rounded-t-lg z-10">
+                <div class="flex justify-between items-center">
+                    <h3 class="text-lg font-semibold" style="color: var(--theme-text);">
+                        <i class="fas fa-edit mr-2" style="color: var(--theme-primary);"></i>
+                        Edit Additional Cost
+                    </h3>
+                    <button onclick="closeEditCostModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times fa-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            {{-- Modal Body --}}
+            <form id="editCostForm" class="px-6 py-4">
+                <input type="hidden" id="edit_cost_id" name="cost_id">
+
+                <div class="space-y-4">
+                    {{-- Name --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Cost Name <span class="text-red-500">*</span>
+                        </label>
+                        <input type="text" id="edit_name" name="name" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="e.g., Server Hosting, SSL Certificate">
+                    </div>
+
+                    {{-- Description --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Description
+                        </label>
+                        <textarea id="edit_description" name="description" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="Additional details about this cost..."></textarea>
+                    </div>
+
+                    {{-- Cost Type --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Cost Type <span class="text-red-500">*</span>
+                        </label>
+                        <select id="edit_cost_type" name="cost_type" required onchange="toggleEditCostTypeFields()"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="one_time">One-time Cost</option>
+                            <option value="monthly_recurring">Monthly Recurring</option>
+                        </select>
+                    </div>
+
+                    {{-- Fee Type --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Budget Impact <span class="text-red-500">*</span>
+                        </label>
+                        <select id="edit_fee_type" name="fee_type" required
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="in_fee">Within Budget (counts toward monthly fee)</option>
+                            <option value="additional">Outside Budget (billed to project, not in monthly fee)</option>
+                        </select>
+                        <p class="text-xs mt-1" style="color: var(--theme-text-muted);">
+                            <strong>Within Budget:</strong> Counted in monthly budget tracking<br>
+                            <strong>Outside Budget:</strong> Billed to the project but does not count toward monthly fee limit
+                        </p>
+                    </div>
+
+                    {{-- Calculation Type --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Calculation Type <span class="text-red-500">*</span>
+                        </label>
+                        <select id="edit_calculation_type" name="calculation_type" required onchange="toggleEditCalculationFields()"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="fixed_amount">Fixed Amount</option>
+                            <option value="hourly_rate">Hourly Rate</option>
+                        </select>
+                    </div>
+
+                    {{-- Fixed Amount --}}
+                    <div id="edit_fixed_amount_fields">
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Amount (€) <span class="text-red-500">*</span>
+                        </label>
+                        <input type="number" id="edit_amount" name="amount" step="0.01" min="0"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="0.00">
+                    </div>
+
+                    {{-- Hourly Rate Fields --}}
+                    <div id="edit_hourly_rate_fields" class="hidden space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                                Hours <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" id="edit_hours" name="hours" step="0.01" min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   placeholder="0.00">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                                Hourly Rate (€) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" id="edit_hourly_rate" name="hourly_rate" step="0.01" min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   placeholder="0.00">
+                        </div>
+                    </div>
+
+                    {{-- Date --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Date <span class="text-red-500">*</span>
+                        </label>
+                        <input type="date" id="edit_start_date" name="start_date" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+
+                    {{-- End Date --}}
+                    <div id="edit_end_date_field" class="hidden">
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            End Date (optional)
+                        </label>
+                        <input type="date" id="edit_end_date" name="end_date"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <p class="text-xs mt-1" style="color: var(--theme-text-muted);">
+                            Leave empty for indefinite recurring cost
+                        </p>
+                    </div>
+
+                    {{-- Notes --}}
+                    <div>
+                        <label class="block text-sm font-medium mb-1" style="color: var(--theme-text);">
+                            Internal Notes
+                        </label>
+                        <textarea id="edit_notes" name="notes" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="Internal notes (not visible on invoices)"></textarea>
+                    </div>
+                </div>
+
+                {{-- Modal Footer --}}
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
+                    <button type="button" onclick="closeEditCostModal()"
+                            class="px-4 py-2 rounded-lg font-medium transition-colors"
+                            style="background-color: #e5e7eb; color: #6b7280;">
+                        Cancel
+                    </button>
+                    <button type="button" onclick="submitEditCostForm()"
+                            class="px-4 py-2 rounded-lg font-medium text-white transition-colors"
+                            style="background-color: var(--theme-primary);">
+                        <i class="fas fa-save mr-2"></i>
+                        Update Cost
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@push('scripts')
+<script>
+// Help modal functions
+function openHelpModal() {
+    document.getElementById('help-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeHelpModal() {
+    document.getElementById('help-modal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
+// Close modal when clicking outside
+document.getElementById('help-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeHelpModal();
+    }
+});
+
+// Close modal with Escape key (alleen help modal)
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        const helpModal = document.getElementById('help-modal');
+        if (helpModal && helpModal.style.display === 'flex') {
+            closeHelpModal();
+        }
+    }
+});
+
+// ============================================
+// Create Cost Modal Functions
+// ============================================
+
+function openCreateCostModal() {
+    // Reset form
+    document.getElementById('createCostForm').reset();
+
+    // Set default values
+    document.getElementById('create_cost_type').value = 'one_time';
+    document.getElementById('create_fee_type').value = 'in_fee';
+    document.getElementById('create_calculation_type').value = 'fixed_amount';
+
+    // Show correct fields
+    toggleCreateCalculationFields();
+    toggleCreateCostTypeFields();
+
+    // Show modal
+    document.getElementById('createCostModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeCreateCostModal() {
+    document.getElementById('createCostModal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+function toggleCreateCalculationFields() {
+    const calculationType = document.getElementById('create_calculation_type').value;
+
+    // Hide all calculation-specific fields first
+    document.getElementById('create_fixed_amount_fields').classList.add('hidden');
+    document.getElementById('create_hourly_rate_fields').classList.add('hidden');
+
+    // Show relevant fields based on calculation type
+    if (calculationType === 'fixed_amount') {
+        document.getElementById('create_fixed_amount_fields').classList.remove('hidden');
+    } else if (calculationType === 'hourly_rate') {
+        document.getElementById('create_hourly_rate_fields').classList.remove('hidden');
+    }
+}
+
+function toggleCreateCostTypeFields() {
+    const costType = document.getElementById('create_cost_type').value;
+    const endDateField = document.getElementById('create_end_date_field');
+
+    if (costType === 'monthly_recurring') {
+        endDateField.classList.remove('hidden');
+    } else {
+        endDateField.classList.add('hidden');
+    }
+}
+
+async function submitCreateCostForm() {
+    const form = document.getElementById('createCostForm');
+    const projectId = {{ $project->id }};
+
+    // Build form data
+    const formData = {
+        name: document.getElementById('create_name').value,
+        description: document.getElementById('create_description').value,
+        cost_type: document.getElementById('create_cost_type').value,
+        fee_type: document.getElementById('create_fee_type').value,
+        calculation_type: document.getElementById('create_calculation_type').value,
+        start_date: document.getElementById('create_start_date').value,
+        auto_invoice: 1, // Always automatically include in invoices
+        notes: document.getElementById('create_notes').value,
+    };
+
+    // Add calculation-specific fields
+    const calculationType = formData.calculation_type;
+    if (calculationType === 'fixed_amount') {
+        formData.amount = document.getElementById('create_amount').value;
+    } else if (calculationType === 'hourly_rate') {
+        formData.hours = document.getElementById('create_hours').value;
+        formData.hourly_rate = document.getElementById('create_hourly_rate').value;
+    }
+
+    // Add end_date for monthly_recurring
+    if (formData.cost_type === 'monthly_recurring') {
+        formData.end_date = document.getElementById('create_end_date').value;
+    }
+
+    // Basic validation
+    if (!formData.name || !formData.start_date) {
+        alert('Please fill in all required fields (marked with *)');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/projects/${projectId}/additional-costs`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (response.ok && result.success) {
+            closeCreateCostModal();
+            // Refresh page to show new cost
+            window.location.reload();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to add cost'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while adding the cost');
+    }
+}
+
+// Close create modal when clicking outside
+document.getElementById('createCostModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeCreateCostModal();
+    }
+});
+
+// ============================================
+// VIEW COST MODAL FUNCTIONS
+// ============================================
+
+async function openViewCostModal(costId) {
+    try {
+        const response = await fetch(`/project-additional-costs/${costId}`, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch cost details');
+        }
+
+        const result = await response.json();
+        const cost = result.cost;
+
+        // Populate view modal fields
+        document.getElementById('view_name').textContent = cost.name || '-';
+
+        // Description (conditionally show)
+        const descWrapper = document.getElementById('view_description_wrapper');
+        if (cost.description && cost.description.trim() !== '') {
+            document.getElementById('view_description').textContent = cost.description;
+            descWrapper.classList.remove('hidden');
+        } else {
+            descWrapper.classList.add('hidden');
+        }
+
+        // Cost Type
+        const costTypeMap = {
+            'one_time': 'One-time Cost',
+            'monthly_recurring': 'Monthly Recurring'
+        };
+        document.getElementById('view_cost_type').textContent = costTypeMap[cost.cost_type] || cost.cost_type;
+
+        // Budget Impact
+        const feeTypeMap = {
+            'in_fee': 'Within Budget (included in monthly fee)',
+            'additional': 'Outside Budget (billed to project, not in monthly fee)'
+        };
+        document.getElementById('view_fee_type').textContent = feeTypeMap[cost.fee_type] || cost.fee_type;
+
+        // Amount Details
+        if (cost.calculation_type === 'fixed_amount') {
+            document.getElementById('view_amount_details').textContent = '€' + parseFloat(cost.amount || 0).toFixed(2);
+        } else if (cost.calculation_type === 'hourly_rate') {
+            document.getElementById('view_amount_details').textContent =
+                `${cost.hours || 0} hours × €${parseFloat(cost.hourly_rate || 0).toFixed(2)} = €${parseFloat(cost.calculateAmount || cost.amount || 0).toFixed(2)}`;
+        }
+
+        // Dates
+        document.getElementById('view_start_date').textContent = cost.start_date || '-';
+
+        // End date (conditionally show for recurring)
+        const endDateWrapper = document.getElementById('view_end_date_wrapper');
+        if (cost.cost_type === 'monthly_recurring' && cost.end_date) {
+            document.getElementById('view_end_date').textContent = cost.end_date;
+            endDateWrapper.classList.remove('hidden');
+        } else {
+            endDateWrapper.classList.add('hidden');
+        }
+
+        // Notes (conditionally show)
+        const notesWrapper = document.getElementById('view_notes_wrapper');
+        if (cost.notes && cost.notes.trim() !== '') {
+            document.getElementById('view_notes').textContent = cost.notes;
+            notesWrapper.classList.remove('hidden');
+        } else {
+            notesWrapper.classList.add('hidden');
+        }
+
+        // Show modal
+        document.getElementById('viewCostModal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to load cost details');
+    }
+}
+
+function closeViewCostModal() {
+    document.getElementById('viewCostModal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+// Close view modal when clicking outside
+document.getElementById('viewCostModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeViewCostModal();
+    }
+});
+
+// ============================================
+// EDIT COST MODAL FUNCTIONS
+// ============================================
+
+async function openEditCostModal(costId) {
+    try {
+        const response = await fetch(`/project-additional-costs/${costId}`, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to fetch cost details');
+        }
+
+        const result = await response.json();
+        const cost = result.cost;
+
+        // Populate edit form fields
+        document.getElementById('edit_cost_id').value = cost.id;
+        document.getElementById('edit_name').value = cost.name || '';
+        document.getElementById('edit_description').value = cost.description || '';
+        document.getElementById('edit_cost_type').value = cost.cost_type || 'one_time';
+        document.getElementById('edit_fee_type').value = cost.fee_type || 'in_fee';
+        document.getElementById('edit_calculation_type').value = cost.calculation_type || 'fixed_amount';
+        document.getElementById('edit_start_date').value = cost.start_date || '';
+        document.getElementById('edit_end_date').value = cost.end_date || '';
+        document.getElementById('edit_notes').value = cost.notes || '';
+
+        // Populate amount fields based on calculation type
+        if (cost.calculation_type === 'fixed_amount') {
+            document.getElementById('edit_amount').value = cost.amount || '';
+        } else if (cost.calculation_type === 'hourly_rate') {
+            document.getElementById('edit_hours').value = cost.hours || '';
+            document.getElementById('edit_hourly_rate').value = cost.hourly_rate || '';
+        }
+
+        // Toggle field visibility
+        toggleEditCalculationFields();
+        toggleEditCostTypeFields();
+
+        // Show modal
+        document.getElementById('editCostModal').classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Failed to load cost details');
+    }
+}
+
+function closeEditCostModal() {
+    document.getElementById('editCostForm').reset();
+    document.getElementById('editCostModal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+function toggleEditCalculationFields() {
+    const calculationType = document.getElementById('edit_calculation_type').value;
+    const fixedAmountFields = document.getElementById('edit_fixed_amount_fields');
+    const hourlyRateFields = document.getElementById('edit_hourly_rate_fields');
+
+    if (calculationType === 'fixed_amount') {
+        fixedAmountFields.classList.remove('hidden');
+        hourlyRateFields.classList.add('hidden');
+        // Clear hourly rate fields
+        const hoursInput = document.getElementById('edit_hours');
+        const rateInput = document.getElementById('edit_hourly_rate');
+        if (hoursInput) hoursInput.value = '';
+        if (rateInput) rateInput.value = '';
+    } else if (calculationType === 'hourly_rate') {
+        fixedAmountFields.classList.add('hidden');
+        hourlyRateFields.classList.remove('hidden');
+        // Clear fixed amount field
+        const amountInput = document.getElementById('edit_amount');
+        if (amountInput) amountInput.value = '';
+    }
+}
+
+function toggleEditCostTypeFields() {
+    const costType = document.getElementById('edit_cost_type').value;
+    const endDateField = document.getElementById('edit_end_date_field');
+
+    if (costType === 'monthly_recurring') {
+        endDateField.classList.remove('hidden');
+    } else {
+        endDateField.classList.add('hidden');
+        const endDateInput = document.getElementById('edit_end_date');
+        if (endDateInput) endDateInput.value = '';
+    }
+}
+
+async function submitEditCostForm() {
+    const costId = document.getElementById('edit_cost_id').value;
+    const calculationType = document.getElementById('edit_calculation_type').value;
+
+    const formData = {
+        name: document.getElementById('edit_name').value,
+        description: document.getElementById('edit_description').value,
+        cost_type: document.getElementById('edit_cost_type').value,
+        fee_type: document.getElementById('edit_fee_type').value,
+        calculation_type: calculationType,
+        start_date: document.getElementById('edit_start_date').value,
+        auto_invoice: 1,
+        notes: document.getElementById('edit_notes').value,
+    };
+
+    // Add calculation-specific fields
+    if (calculationType === 'fixed_amount') {
+        formData.amount = document.getElementById('edit_amount').value;
+    } else if (calculationType === 'hourly_rate') {
+        formData.hours = document.getElementById('edit_hours').value;
+        formData.hourly_rate = document.getElementById('edit_hourly_rate').value;
+    }
+
+    // Add end_date for monthly recurring
+    if (formData.cost_type === 'monthly_recurring') {
+        formData.end_date = document.getElementById('edit_end_date').value;
+    }
+
+    try {
+        const response = await fetch(`/project-additional-costs/${costId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            closeEditCostModal();
+            // Refresh page to show updated cost
+            window.location.reload();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to update cost'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while updating the cost');
+    }
+}
+
+// Close edit modal when clicking outside
+document.getElementById('editCostModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeEditCostModal();
+    }
+});
+
+// ============================================
+// DELETE COST FUNCTION
+// ============================================
+
+async function deleteCost(costId) {
+    if (!confirm('Are you sure you want to delete this additional cost? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/project-additional-costs/${costId}`, {
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            // Refresh page to remove deleted cost
+            window.location.reload();
+        } else {
+            alert('Error: ' + (result.error || 'Failed to delete cost'));
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('An error occurred while deleting the cost');
+    }
+}
+
+// ============================================
+// RECURRING SERIES MODAL FUNCTIONS
+// ============================================
+
+function openRecurringSeriesModal() {
+    console.log('Opening recurring series modal...');
+    document.getElementById('recurringSeriesModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeRecurringSeriesModal() {
+    console.log('Closing recurring series modal...');
+    document.getElementById('recurringSeriesModal').classList.add('hidden');
+    document.body.style.overflow = 'auto';
+}
+
+// Handle standalone project series ID selection - INLINE DEFINITION
+window.handleStandaloneSeriesSelection = function(value) {
+    console.log('✅ handleStandaloneSeriesSelection called with value:', value);
+
+    const customInput = document.getElementById('standalone_series_custom');
+
+    if (!customInput) {
+        console.error('❌ ERROR: Element with ID "standalone_series_custom" not found!');
+        alert('Error: Input field not found. Please refresh the page and try again.');
+        return;
+    }
+
+    console.log('✅ Custom input element found:', customInput);
+
+    if (value === '_custom') {
+        // Show custom input field with animation
+        console.log('👁️ Showing custom input field...');
+        customInput.style.display = 'block';
+        customInput.style.marginTop = '1rem';
+
+        // Slight delay to ensure display is rendered before focus
+        setTimeout(() => {
+            customInput.focus();
+            customInput.value = ''; // Clear for new custom entry
+            console.log('✅ Custom input field is now visible and focused');
+        }, 50);
+    } else {
+        // Hide custom input field
+        console.log('🙈 Hiding custom input field...');
+        customInput.style.display = 'none';
+
+        if (value) {
+            // Set selected series ID
+            customInput.value = value;
+            console.log('✅ Set custom input value to:', value);
+        } else {
+            // Clear value (remove from series)
+            customInput.value = '';
+            console.log('🗑️ Cleared custom input value');
+        }
+    }
+};
+
+console.log('✅ Recurring Series modal functions are READY!');
+</script>
+@endpush
+
+{{-- ============================================ --}}
+{{-- RECURRING SERIES MODAL (voor niet-recurring projects) --}}
+{{-- ============================================ --}}
+@if(!$project->is_recurring && in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']))
+<div id="recurringSeriesModal" class="hidden fixed inset-0 z-50 overflow-y-auto" style="background-color: rgba(0, 0, 0, 0.5);">
+    <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:p-0">
+        <div class="relative inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+            {{-- Modal Header --}}
+            <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: 1.5rem; background: linear-gradient(135deg, rgba(var(--theme-primary-rgb), 0.05) 0%, rgba(var(--theme-primary-rgb), 0.02) 100%);">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 style="font-size: calc(var(--theme-font-size) + 6px); font-weight: 600; color: var(--theme-text); margin: 0;">
+                            <i class="fas fa-layer-group mr-2" style="color: var(--theme-primary);"></i>
+                            Add to Recurring Series
+                        </h3>
+                        @if($project->recurring_series_id)
+                            <p style="font-size: calc(var(--theme-font-size) - 2px); margin-top: 0.25rem; color: var(--theme-text-muted);">
+                                Current series: <strong style="color: var(--theme-primary);">{{ $project->recurring_series_id }}</strong>
+                            </p>
+                        @endif
+                    </div>
+                    <button onclick="closeRecurringSeriesModal()"
+                            class="text-gray-400 hover:text-gray-500 transition-colors"
+                            style="font-size: 1.5rem; line-height: 1; padding: 0.25rem; border: none; background: none; cursor: pointer;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            {{-- Modal Body --}}
+            <div style="padding: 1.5rem;">
+                {{-- Master Template Toggle (alleen als project in series zit) --}}
+                @if($project->recurring_series_id)
+                <div style="background-color: rgba(var(--theme-accent-rgb), 0.05); border: 1px solid rgba(var(--theme-accent-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); margin-bottom: 1rem;">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-crown" style="color: var(--theme-accent); font-size: calc(var(--theme-font-size) + 6px);"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h4 style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 600; color: var(--theme-text);">Master Template for Series</h4>
+                                <p style="font-size: calc(var(--theme-font-size) - 2px); color: var(--theme-text-muted); margin-top: 0.25rem;">
+                                    @if($project->is_master_template)
+                                        ✅ This project is the master template for <strong>{{ $project->recurring_series_id }}</strong>
+                                    @else
+                                        This project is part of series: <strong>{{ $project->recurring_series_id }}</strong>
+                                    @endif
+                                </p>
+                            </div>
+                        </div>
+                        <form action="{{ route('projects.toggleMasterTemplate', $project) }}" method="POST" onsubmit="return confirmMasterTemplateToggle({{ $project->is_master_template ? 'false' : 'true' }})">
+                            @csrf
+                            @if($project->is_master_template)
+                                <button type="submit" class="inline-flex items-center transition-colors"
+                                        style="padding: 0.5rem 1rem; background-color: rgba(var(--theme-danger-rgb), 0.1); border: 1px solid rgba(var(--theme-danger-rgb), 0.3); border-radius: var(--theme-border-radius); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-danger); cursor: pointer;">
+                                    <i class="fas fa-times-circle mr-2"></i>
+                                    Remove Master Status
+                                </button>
+                            @else
+                                <button type="submit" class="inline-flex items-center transition-colors"
+                                        style="padding: 0.5rem 1rem; background-color: var(--theme-accent); border: 1px solid transparent; border-radius: var(--theme-border-radius); font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: white; cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);">
+                                    <i class="fas fa-arrow-up mr-2"></i>
+                                    Upgrade to Master Template
+                                </button>
+                            @endif
+                        </form>
+                    </div>
+                    @if(!$project->is_master_template)
+                    <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid rgba(var(--theme-accent-rgb), 0.2);">
+                        <p style="font-size: calc(var(--theme-font-size) - 2px); color: var(--theme-text-muted);">
+                            <strong>💡 Tip:</strong> Make this the master template to use it for auto-generating future projects in this series with clean, general structure (no month-specific tasks).
+                        </p>
+                    </div>
+                    @endif
+                </div>
+                @endif
+
+                {{-- Info Box --}}
+                <div style="background-color: rgba(var(--theme-primary-rgb), 0.05); border: 1px solid rgba(var(--theme-primary-rgb), 0.2); border-radius: var(--theme-border-radius); padding: var(--theme-card-padding); margin-bottom: 1rem;">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-info-circle" style="color: var(--theme-primary);"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text);">
+                                Group this project with other projects for consolidated budget tracking. Select an existing series or create a new one.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                @php
+                    $existingSeriesForStandalone = \App\Models\Project::whereNotNull('recurring_series_id')
+                        ->select('recurring_series_id', DB::raw('COUNT(*) as project_count'))
+                        ->groupBy('recurring_series_id')
+                        ->orderBy('recurring_series_id')
+                        ->get();
+                @endphp
+
+                {{-- Series Form --}}
+                <form action="{{ route('projects.updateSeriesId', $project) }}" method="POST" class="space-y-3">
+                    @csrf
+                    @method('PUT')
+
+                    <div>
+                        <label style="font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; color: var(--theme-text-muted); display: block; margin-bottom: 0.5rem;">
+                            Recurring Series ID:
+                        </label>
+                        <select id="standalone_series_select"
+                                onchange="handleStandaloneSeriesSelection(this.value)"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                style="font-size: var(--theme-font-size);">
+                            <option value="">Remove from series</option>
+                            <option value="_custom">Create new custom series ID</option>
+                            @if($existingSeriesForStandalone->count() > 0)
+                                <optgroup label="Existing Series">
+                                    @foreach($existingSeriesForStandalone as $seriesId)
+                                    <option value="{{ $seriesId->recurring_series_id }}"
+                                            {{ $project->recurring_series_id == $seriesId->recurring_series_id ? 'selected' : '' }}>
+                                        {{ $seriesId->recurring_series_id }}
+                                        ({{ $seriesId->project_count }} {{ $seriesId->project_count == 1 ? 'project' : 'projects' }})
+                                    </option>
+                                    @endforeach
+                                </optgroup>
+                            @endif
+                        </select>
+                    </div>
+
+                    {{-- Custom Series ID Input (initially hidden) --}}
+                    <input type="text"
+                           name="recurring_series_id"
+                           id="standalone_series_custom"
+                           value="{{ $project->recurring_series_id }}"
+                           style="display: none; width: 100%; padding: 0.5rem 0.75rem; margin-top: 0.75rem; border: 2px solid var(--theme-primary); border-radius: var(--theme-border-radius); background-color: rgba(var(--theme-primary-rgb), 0.05); font-size: var(--theme-font-size);"
+                           placeholder="e.g., anker-solix-recurring">
+
+                    {{-- Action Buttons --}}
+                    <div class="flex justify-end gap-3 pt-4">
+                        <button type="button"
+                                onclick="closeRecurringSeriesModal()"
+                                class="px-4 py-2 rounded transition-colors"
+                                style="background-color: #e5e7eb; color: #6b7280; font-size: calc(var(--theme-font-size) - 1px); font-weight: 500; border: none; cursor: pointer;">
+                            Cancel
+                        </button>
+                        <button type="submit"
+                                class="inline-flex items-center transition-colors"
+                                style="padding: 0.5rem 1rem; background-color: var(--theme-primary); color: white; font-size: var(--theme-font-size); font-weight: 500; border: none; border-radius: var(--theme-border-radius); cursor: pointer;">
+                            <i class="fas fa-save mr-2"></i>
+                            Update Series
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 @endif
 
 @endsection

@@ -22,6 +22,29 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 class TimeEntryImportController extends Controller
 {
     /**
+     * Get System user ID for automated approvals
+     */
+    private function getSystemUserId()
+    {
+        $systemUser = User::where('email', 'system@progress.adcompro.app')->first();
+
+        if (!$systemUser) {
+            // Maak System user aan als die nog niet bestaat
+            $systemUser = User::create([
+                'name' => 'System',
+                'email' => 'system@progress.adcompro.app',
+                'email_verified_at' => now(),
+                'password' => 'system_no_login',
+                'role' => 'super_admin',
+                'company_id' => 1,
+                'is_active' => false,
+            ]);
+        }
+
+        return $systemUser->id;
+    }
+
+    /**
      * Show upload form
      */
     public function index()
@@ -272,9 +295,9 @@ class TimeEntryImportController extends Controller
                         'is_billable' => $entry['is_billable'],
                         'hourly_rate_used' => $entry['hourly_rate_override'] ?? null,  // NIEUW: Bewaar geïmporteerde rate
                         'status' => 'approved', // Auto-approve imports
-                        'approved_by' => Auth::id(),
+                        'approved_by' => $this->getSystemUserId(), // SYSTEM approval voor imports
                         'approved_at' => now(),
-                        'created_by' => Auth::id(),
+                        'created_by' => Auth::id(), // Wel tracken wie de import deed
                         'updated_by' => Auth::id(),
                     ]);
 
@@ -379,7 +402,7 @@ class TimeEntryImportController extends Controller
                 $mapping['description'] = $index;
             }
             // Customer kolom (NIEUW: voor auto-create)
-            elseif (in_array($header, ['customer', 'klant', 'client', 'bedrijf', 'company'])) {
+            elseif (in_array($header, ['customer', 'klant', 'client', 'bedrijf', 'bedrijfsnaam', 'company'])) {
                 $mapping['customer'] = $index;
             }
             // Project kolom
@@ -505,112 +528,115 @@ class TimeEntryImportController extends Controller
             $data['hourly_rate_override'] = $hourlyRateValue;
         }
 
-        // Parse project EERST - zoek bestaande project
+        // KRITIEKE FIX (08-11-2025): Parse EERST customer, DAN project binnen die customer
+        // Dit voorkomt dat entries bij verkeerde customer terecht komen
         $projectName = $row[$mapping['project']] ?? null;
         $projectCode = $row[$mapping['project_code']] ?? null;
         $project = null;
         $customer = null;
 
-        if ($projectName) {
-            // Zoek bestaande project - match op naam OF projectcode
-            $query = Project::where('company_id', Auth::user()->company_id)
-                ->where(function($q) use ($projectName, $projectCode) {
-                    $q->where('name', $projectName);
-                    if ($projectCode) {
-                        $q->orWhere('project_code', $projectCode);
-                    }
-                });
+        // STAP 1: Parse customer EERST
+        $customerName = !is_null($mapping['customer']) && isset($row[$mapping['customer']])
+            ? $row[$mapping['customer']]
+            : null;
 
-            $project = $query->first();
+        // Log warning als customer column niet gemapped is
+        if (is_null($mapping['customer'])) {
+            Log::warning('⚠️ Customer column not mapped in import - projects cannot be scoped by customer', [
+                'project_name' => $projectName,
+                'row_number' => $rowNumber ?? 'unknown'
+            ]);
+        }
 
-            // Als project BESTAAT, gebruik customer van dat project (KRITIEKE FIX!)
-            if ($project && $project->customer_id) {
-                $customer = $project->customer;
-                Log::info('Using existing project customer', [
-                    'project_name' => $projectName,
-                    'project_id' => $project->id,
-                    'customer_name' => $customer->name,
-                    'customer_id' => $customer->id
+        if ($customerName) {
+            // Zoek bestaande customer (exacte match)
+            $customer = Customer::where(function($q) {
+                    $q->where('company_id', Auth::user()->company_id)
+                      ->orWhereNull('company_id');
+                })
+                ->where(function($q) use ($customerName) {
+                    $q->where('name', $customerName)
+                      ->orWhere('company', $customerName);
+                })
+                ->first();
+
+            // Probeer LIKE match als geen exacte match
+            if (!$customer) {
+                $customer = Customer::where(function($q) {
+                        $q->where('company_id', Auth::user()->company_id)
+                          ->orWhereNull('company_id');
+                    })
+                    ->where(function($q) use ($customerName) {
+                        $q->where('name', 'LIKE', "%{$customerName}%")
+                          ->orWhere('company', 'LIKE', "%{$customerName}%");
+                    })
+                    ->first();
+            }
+
+            if ($customer) {
+                Log::info('✅ Matched customer for time entry', [
+                    'csv_customer_name' => $customerName,
+                    'matched_customer_id' => $customer->id,
+                    'matched_customer_name' => $customer->name
+                ]);
+            } else {
+                Log::warning('❌ No customer match found', [
+                    'csv_customer_name' => $customerName
                 ]);
             }
         }
 
-        // Parse customer - alleen als NIET gevonden via bestaand project
-        if (!$customer) {
-            $customerName = !is_null($mapping['customer']) && isset($row[$mapping['customer']])
-                ? $row[$mapping['customer']]
-                : null;
+        // STAP 2: Parse project BINNEN gevonden customer
+        if ($projectName) {
+            $projectQuery = Project::where('company_id', Auth::user()->company_id);
 
-            // ALLEEN als er een expliciete customer kolom is, probeer customer te matchen/aanmaken
-            // NOOIT automatisch customers aanmaken o.b.v. project naam!
-            if ($customerName) {
-                // Zoek bestaande customer - VERBETERDE MATCHING LOGICA
-                // Stap 1: Probeer exacte match op 'name' OF 'company' kolom
-                // BELANGRIJK: Zoek ook in customers met NULL company_id (Teamleader import)
-                $customer = Customer::where(function($q) {
-                        $q->where('company_id', Auth::user()->company_id)
-                          ->orWhereNull('company_id'); // KRITIEK: Ook NULL company_id (Teamleader imports)
-                    })
-                    ->where(function($q) use ($customerName) {
-                        $q->where('name', $customerName)
-                          ->orWhere('company', $customerName);
-                    })
-                    ->first();
-
-                // Stap 2: Als geen exacte match, probeer LIKE match (partial matching)
-                // Dit matcht bijv. "Anker" met "Anker Solix"
-                if (!$customer) {
-                    $customer = Customer::where(function($q) {
-                            $q->where('company_id', Auth::user()->company_id)
-                              ->orWhereNull('company_id'); // KRITIEK: Ook NULL company_id (Teamleader imports)
-                        })
-                        ->where(function($q) use ($customerName) {
-                            $q->where('name', 'LIKE', "%{$customerName}%")
-                              ->orWhere('company', 'LIKE', "%{$customerName}%");
-                        })
-                        ->first();
-
-                    if ($customer) {
-                        Log::info('Customer matched via partial match', [
-                            'search_name' => $customerName,
-                            'found_customer' => $customer->name,
-                            'customer_id' => $customer->id
-                        ]);
-                    }
-                }
-
-                // Stap 3: Als nog steeds geen match, maak nieuwe customer aan
-                if (!$customer) {
-                    try {
-                        $customer = Customer::create([
-                            'company_id' => Auth::user()->company_id,
-                            'name' => $customerName,
-                            'company' => $customerName, // Vul ook company kolom
-                            'status' => 'active',
-                            'is_active' => true,
-                            'created_by' => Auth::id(),
-                        ]);
-
-                        Log::info('Auto-created customer during time entry import', [
-                            'customer_id' => $customer->id,
-                            'name' => $customerName,
-                            'imported_by' => Auth::id()
-                        ]);
-                    } catch (\Exception $e) {
-                        Log::warning('Could not create customer', [
-                            'name' => $customerName,
-                            'error' => $e->getMessage()
-                        ]);
-                    }
-                }
-
-                if ($customer) {
-                    $data['customer_id'] = $customer->id;
-                    $data['customer_name'] = $customer->name;
-                }
+            // BELANGRIJK: Als customer gevonden, zoek ALLEEN binnen die customer
+            if ($customer) {
+                $projectQuery->where('customer_id', $customer->id);
             }
-        } else {
-            // Customer gevonden via bestaand project
+
+            // Eerst exacte match proberen (snelst)
+            $project = (clone $projectQuery)->where('name', $projectName)->first();
+
+            // Als geen exacte match, probeer case-insensitive
+            if (!$project) {
+                $project = (clone $projectQuery)->whereRaw('LOWER(name) = LOWER(?)', [$projectName])->first();
+            }
+
+            // Als nog geen match, probeer LIKE match
+            if (!$project) {
+                $project = (clone $projectQuery)->where('name', 'LIKE', '%' . $projectName . '%')->first();
+            }
+
+            // Log resultaat
+            if ($project) {
+                Log::info('✅ Matched project for time entry', [
+                    'csv_project_name' => $projectName,
+                    'matched_project_id' => $project->id,
+                    'matched_project_name' => $project->name,
+                    'customer_name' => $customer ? $customer->name : 'N/A',
+                    'customer_id' => $customer ? $customer->id : 'N/A'
+                ]);
+
+                // Update customer als nog niet gezet
+                if (!$customer && $project->customer_id) {
+                    $customer = $project->customer;
+                }
+            } else {
+                Log::warning('❌ No project match found', [
+                    'csv_project_name' => $projectName,
+                    'customer_scope' => $customer ? $customer->name : 'all customers'
+                ]);
+            }
+        }
+
+        // Als customer nog niet gevonden maar we hebben wel een project
+        if (!$customer && $project && $project->customer_id) {
+            $customer = $project->customer;
+        }
+
+        // Set customer data als gevonden
+        if ($customer) {
             $data['customer_id'] = $customer->id;
             $data['customer_name'] = $customer->name;
         }
@@ -618,56 +644,46 @@ class TimeEntryImportController extends Controller
         // Vervolg met project logic (als project nog niet gevonden)
         if (!$project && $projectName) {
             try {
-                    // NIEUW: Check eerst of project in Teamleader bestaat voor budget data
-                    $teamleaderProject = TeamleaderProject::where('title', $projectName)
-                        ->orWhere('title', 'LIKE', "%{$projectName}%")
-                        ->first();
+                // Check eerst of project in Teamleader bestaat voor budget data
+                $teamleaderProject = TeamleaderProject::where('title', $projectName)
+                    ->orWhere('title', 'LIKE', "%{$projectName}%")
+                    ->first();
 
-                    $monthlyFee = null;
-                    $totalValue = null;
-                    $teamleaderId = null;
+                $monthlyFee = null;
+                $totalValue = null;
+                $teamleaderId = null;
 
-                    if ($teamleaderProject) {
-                        $monthlyFee = $teamleaderProject->budget_amount;
-                        $totalValue = $teamleaderProject->budget_amount;
-                        $teamleaderId = $teamleaderProject->teamleader_id;
+                if ($teamleaderProject) {
+                    $monthlyFee = $teamleaderProject->budget_amount;
+                    $totalValue = $teamleaderProject->budget_amount;
+                    $teamleaderId = $teamleaderProject->teamleader_id;
+                }
 
-                        Log::info('Found Teamleader project with budget data', [
-                            'project_name' => $projectName,
-                            'teamleader_title' => $teamleaderProject->title,
-                            'budget_amount' => $teamleaderProject->budget_amount
-                        ]);
-                    }
+                $project = Project::create([
+                    'company_id' => Auth::user()->company_id,
+                    'customer_id' => $customer ? $customer->id : null,
+                    'name' => $projectName,
+                    'project_code' => $projectCode,
+                    'teamleader_id' => $teamleaderId,
+                    'status' => 'active',
+                    'billing_frequency' => 'monthly',
+                    'monthly_fee' => $monthlyFee,
+                    'total_value' => $totalValue,
+                    'default_hourly_rate' => 165.00,
+                    'created_by' => Auth::id(),
+                    'updated_by' => Auth::id(),
+                ]);
 
-                    $project = Project::create([
-                        'company_id' => Auth::user()->company_id,
-                        'customer_id' => $customer ? $customer->id : null,
-                        'name' => $projectName,
-                        'project_code' => $projectCode,
-                        'teamleader_id' => $teamleaderId, // Link naar Teamleader
-                        'status' => 'active',
-                        'billing_frequency' => 'monthly',
-                        'monthly_fee' => $monthlyFee, // Budget uit Teamleader!
-                        'total_value' => $totalValue,  // Budget uit Teamleader!
-                        'default_hourly_rate' => 165.00, // Default rate
-                        'created_by' => Auth::id(),
-                        'updated_by' => Auth::id(),
-                    ]);
-
-                    Log::info('Auto-created project during time entry import', [
-                        'project_id' => $project->id,
-                        'name' => $projectName,
-                        'customer_id' => $customer ? $customer->id : null,
-                        'monthly_fee' => $monthlyFee,
-                        'from_teamleader' => $teamleaderProject ? true : false,
-                        'imported_by' => Auth::id()
-                    ]);
+                Log::info('Auto-created project during time entry import', [
+                    'project_id' => $project->id,
+                    'name' => $projectName,
+                    'customer_id' => $customer ? $customer->id : null,
+                    'monthly_fee' => $monthlyFee,
+                    'from_teamleader' => $teamleaderProject ? true : false,
+                    'imported_by' => Auth::id()
+                ]);
             } catch (\Exception $e) {
                 $errors[] = "Could not create project: {$projectName} - " . $e->getMessage();
-                Log::warning('Could not create project', [
-                    'name' => $projectName,
-                    'error' => $e->getMessage()
-                ]);
             }
         }
 

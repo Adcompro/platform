@@ -127,41 +127,108 @@ class ProjectAdditionalCostController extends Controller
             abort(403, 'Access denied. Only managers can add costs.');
         }
 
-        $validated = $request->validate([
+        // Dynamische validatie regels op basis van calculation_type
+        $rules = [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'start_date' => 'required|date',
-            'amount' => 'required|numeric|min:0',
+            'calculation_type' => 'required|in:fixed_amount,hourly_rate,quantity_based',
             'fee_type' => 'required|in:in_fee,additional',
             'cost_type' => 'required|in:one_time,monthly_recurring',
-            'category' => 'required|in:hosting,software,licenses,services,other',
+            'category' => 'nullable|in:hosting,software,licenses,services,other',
             'vendor' => 'nullable|string|max:255',
             'reference' => 'nullable|string|max:255',
             'auto_invoice' => 'boolean',
             'notes' => 'nullable|string',
-        ]);
+        ];
+
+        // Voeg calculation-specifieke validatie toe
+        $calculationType = $request->input('calculation_type', 'fixed_amount');
+
+        if ($calculationType === 'fixed_amount') {
+            $rules['amount'] = 'required|numeric|min:0';
+        } elseif ($calculationType === 'hourly_rate') {
+            $rules['hours'] = 'required|numeric|min:0';
+            $rules['hourly_rate'] = 'required|numeric|min:0';
+        } elseif ($calculationType === 'quantity_based') {
+            $rules['quantity'] = 'required|numeric|min:0';
+            $rules['unit'] = 'nullable|string|max:50';
+            $rules['unit_price'] = 'required|numeric|min:0';
+        }
+
+        // Voeg date validatie toe voor monthly_recurring
+        if ($request->input('cost_type') === 'monthly_recurring') {
+            $rules['start_date'] = 'required|date';
+            $rules['end_date'] = 'nullable|date|after:start_date';
+        } else {
+            $rules['start_date'] = 'required|date';
+        }
+
+        $validated = $request->validate($rules);
 
         try {
             DB::beginTransaction();
 
-            $cost = $project->additionalCosts()->create([
+            $costData = [
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
-                'start_date' => $validated['start_date'],
-                'amount' => $validated['amount'],
+                'calculation_type' => $validated['calculation_type'],
                 'fee_type' => $validated['fee_type'],
                 'cost_type' => $validated['cost_type'],
-                'category' => $validated['category'],
+                'category' => $validated['category'] ?? null,
                 'vendor' => $validated['vendor'] ?? null,
                 'reference' => $validated['reference'] ?? null,
                 'auto_invoice' => $request->boolean('auto_invoice'),
                 'notes' => $validated['notes'] ?? null,
                 'is_active' => true,
                 'created_by' => Auth::id(),
-            ]);
+            ];
+
+            // Voeg calculation-specifieke velden toe
+            if ($calculationType === 'fixed_amount') {
+                $costData['amount'] = $validated['amount'];
+                $costData['hourly_rate'] = null;
+                $costData['hours'] = null;
+                $costData['quantity'] = null;
+                $costData['unit'] = null;
+                $costData['unit_price'] = null;
+            } elseif ($calculationType === 'hourly_rate') {
+                $costData['hours'] = $validated['hours'];
+                $costData['hourly_rate'] = $validated['hourly_rate'];
+                $costData['amount'] = $validated['hours'] * $validated['hourly_rate']; // Bereken amount
+                $costData['quantity'] = null;
+                $costData['unit'] = null;
+                $costData['unit_price'] = null;
+            } elseif ($calculationType === 'quantity_based') {
+                $costData['quantity'] = $validated['quantity'];
+                $costData['unit'] = $validated['unit'] ?? null;
+                $costData['unit_price'] = $validated['unit_price'];
+                $costData['amount'] = $validated['quantity'] * $validated['unit_price']; // Bereken amount
+                $costData['hourly_rate'] = null;
+                $costData['hours'] = null;
+            }
+
+            // Voeg date velden toe
+            if ($validated['cost_type'] === 'monthly_recurring') {
+                $costData['start_date'] = $validated['start_date'];
+                $costData['end_date'] = $validated['end_date'] ?? null;
+            } else {
+                $costData['start_date'] = $validated['start_date'];
+                $costData['end_date'] = null;
+            }
+
+            $cost = $project->additionalCosts()->create($costData);
 
             DB::commit();
             Log::info('Additional cost created', ['cost_id' => $cost->id, 'project_id' => $project->id]);
+
+            // Als JSON request (van modal), return JSON success
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Cost added successfully.',
+                    'cost' => $cost
+                ]);
+            }
 
             return redirect()->route('projects.additional-costs.index', $project)
                 ->with('success', 'Additional cost added successfully.');
@@ -169,9 +236,60 @@ class ProjectAdditionalCostController extends Controller
         } catch (\Exception $e) {
             DB::rollback();
             Log::error('Error creating additional cost', ['error' => $e->getMessage()]);
+
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+
             return back()->withInput()
                 ->with('error', 'Error: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Display a specific additional cost (JSON only, for modals)
+     */
+    public function show(ProjectAdditionalCost $projectAdditionalCost)
+    {
+        // Authorization check
+        $project = $projectAdditionalCost->project;
+
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager']) &&
+            !$project->users()->where('user_id', Auth::id())->exists()) {
+
+            if (request()->expectsJson()) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+            abort(403, 'Access denied.');
+        }
+
+        // Calculate the amount for display
+        $amount = $projectAdditionalCost->calculateAmount();
+
+        // Prepare cost data
+        $costData = [
+            'id' => $projectAdditionalCost->id,
+            'name' => $projectAdditionalCost->name,
+            'description' => $projectAdditionalCost->description,
+            'cost_type' => $projectAdditionalCost->cost_type,
+            'fee_type' => $projectAdditionalCost->fee_type,
+            'calculation_type' => $projectAdditionalCost->calculation_type,
+            'amount' => $projectAdditionalCost->amount,
+            'hours' => $projectAdditionalCost->hours,
+            'hourly_rate' => $projectAdditionalCost->hourly_rate,
+            'start_date' => $projectAdditionalCost->start_date ? $projectAdditionalCost->start_date->format('Y-m-d') : null,
+            'end_date' => $projectAdditionalCost->end_date ? $projectAdditionalCost->end_date->format('Y-m-d') : null,
+            'notes' => $projectAdditionalCost->notes,
+            'calculateAmount' => $amount,
+        ];
+
+        return response()->json([
+            'success' => true,
+            'cost' => $costData
+        ]);
     }
 
     /**
@@ -249,7 +367,7 @@ class ProjectAdditionalCostController extends Controller
     /**
      * Edit one-time additional cost
      */
-    public function edit(Project $project, ProjectAdditionalCost $additionalCost)
+    public function edit(Request $request, Project $project, ProjectAdditionalCost $additionalCost)
     {
         // Authorization check
         if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
@@ -257,10 +375,43 @@ class ProjectAdditionalCostController extends Controller
         }
 
         if (!$additionalCost->canBeEdited()) {
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => 'This cost cannot be edited because it is already invoiced.'
+                ], 403);
+            }
+
             return redirect()->route('projects.additional-costs.index', $project)
-                ->with('error', 'This cost cannot be edited because it is not active.');
+                ->with('error', 'This cost cannot be edited because it is already invoiced.');
         }
 
+        // Als JSON request (voor modal), return JSON data
+        if ($request->expectsJson()) {
+            return response()->json([
+                'id' => $additionalCost->id,
+                'name' => $additionalCost->name,
+                'description' => $additionalCost->description,
+                'category' => $additionalCost->category,
+                'cost_type' => $additionalCost->cost_type,
+                'fee_type' => $additionalCost->fee_type,
+                'calculation_type' => $additionalCost->calculation_type,
+                'amount' => $additionalCost->amount,
+                'hourly_rate' => $additionalCost->hourly_rate,
+                'hours' => $additionalCost->hours,
+                'quantity' => $additionalCost->quantity,
+                'unit' => $additionalCost->unit,
+                'unit_price' => $additionalCost->unit_price,
+                'start_date' => $additionalCost->start_date ? $additionalCost->start_date->format('Y-m-d') : null,
+                'end_date' => $additionalCost->end_date ? $additionalCost->end_date->format('Y-m-d') : null,
+                'vendor' => $additionalCost->vendor,
+                'reference' => $additionalCost->reference,
+                'auto_invoice' => $additionalCost->auto_invoice,
+                'notes' => $additionalCost->notes,
+            ]);
+        }
+
+        // Anders, return normale edit view
         return view('projects.additional-costs.edit', compact(
             'project',
             'additionalCost'
@@ -278,46 +429,123 @@ class ProjectAdditionalCostController extends Controller
         }
 
         if (!$additionalCost->canBeEdited()) {
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => 'This cost cannot be edited because it is already invoiced.'
+                ], 403);
+            }
+
             return redirect()->route('projects.additional-costs.index', $project)
-                ->with('error', 'This cost cannot be edited because it is not active.');
+                ->with('error', 'This cost cannot be edited because it is already invoiced.');
         }
 
-        $validated = $request->validate([
+        // Dynamische validatie regels op basis van calculation_type
+        $rules = [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'start_date' => 'required|date',
-            'amount' => 'required|numeric|min:0',
+            'calculation_type' => 'required|in:fixed_amount,hourly_rate,quantity_based',
             'fee_type' => 'required|in:in_fee,additional',
             'cost_type' => 'required|in:one_time,monthly_recurring',
-            'category' => 'required|in:hosting,software,licenses,services,other',
+            'category' => 'nullable|in:hosting,software,licenses,services,other',
             'vendor' => 'nullable|string|max:255',
             'reference' => 'nullable|string|max:255',
             'auto_invoice' => 'boolean',
             'notes' => 'nullable|string',
-        ]);
+        ];
+
+        // Voeg calculation-specifieke validatie toe
+        $calculationType = $request->input('calculation_type', 'fixed_amount');
+
+        if ($calculationType === 'fixed_amount') {
+            $rules['amount'] = 'required|numeric|min:0';
+        } elseif ($calculationType === 'hourly_rate') {
+            $rules['hours'] = 'required|numeric|min:0';
+            $rules['hourly_rate'] = 'required|numeric|min:0';
+        } elseif ($calculationType === 'quantity_based') {
+            $rules['quantity'] = 'required|numeric|min:0';
+            $rules['unit'] = 'nullable|string|max:50';
+            $rules['unit_price'] = 'required|numeric|min:0';
+        }
+
+        // Voeg date validatie toe voor monthly_recurring
+        if ($request->input('cost_type') === 'monthly_recurring') {
+            $rules['start_date'] = 'required|date';
+            $rules['end_date'] = 'nullable|date|after:start_date';
+        }
+
+        $validated = $request->validate($rules);
 
         try {
-            $additionalCost->update([
+            $updateData = [
                 'name' => $validated['name'],
                 'description' => $validated['description'] ?? null,
-                'start_date' => $validated['start_date'],
-                'amount' => $validated['amount'],
+                'calculation_type' => $validated['calculation_type'],
                 'fee_type' => $validated['fee_type'],
                 'cost_type' => $validated['cost_type'],
-                'category' => $validated['category'],
+                'category' => $validated['category'] ?? null,
                 'vendor' => $validated['vendor'] ?? null,
                 'reference' => $validated['reference'] ?? null,
                 'auto_invoice' => $request->boolean('auto_invoice'),
                 'notes' => $validated['notes'] ?? null,
-            ]);
+            ];
+
+            // Voeg calculation-specifieke velden toe
+            if ($calculationType === 'fixed_amount') {
+                $updateData['amount'] = $validated['amount'];
+                $updateData['hourly_rate'] = null;
+                $updateData['hours'] = null;
+                $updateData['quantity'] = null;
+                $updateData['unit'] = null;
+                $updateData['unit_price'] = null;
+            } elseif ($calculationType === 'hourly_rate') {
+                $updateData['hours'] = $validated['hours'];
+                $updateData['hourly_rate'] = $validated['hourly_rate'];
+                $updateData['amount'] = $validated['hours'] * $validated['hourly_rate']; // Bereken amount
+                $updateData['quantity'] = null;
+                $updateData['unit'] = null;
+                $updateData['unit_price'] = null;
+            } elseif ($calculationType === 'quantity_based') {
+                $updateData['quantity'] = $validated['quantity'];
+                $updateData['unit'] = $validated['unit'] ?? null;
+                $updateData['unit_price'] = $validated['unit_price'];
+                $updateData['amount'] = $validated['quantity'] * $validated['unit_price']; // Bereken amount
+                $updateData['hourly_rate'] = null;
+                $updateData['hours'] = null;
+            }
+
+            // Voeg date velden toe als monthly_recurring
+            if ($validated['cost_type'] === 'monthly_recurring') {
+                $updateData['start_date'] = $validated['start_date'];
+                $updateData['end_date'] = $validated['end_date'] ?? null;
+            }
+
+            $additionalCost->update($updateData);
 
             Log::info('Additional cost updated', ['cost_id' => $additionalCost->id]);
+
+            // Als JSON request (van modal), return JSON success
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Cost updated successfully.',
+                    'cost' => $additionalCost->fresh()
+                ]);
+            }
 
             return redirect()->route('projects.additional-costs.index', $project)
                 ->with('success', 'Additional cost updated successfully.');
 
         } catch (\Exception $e) {
             Log::error('Error updating additional cost', ['error' => $e->getMessage()]);
+
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+
             return back()->withInput()
                 ->with('error', 'Error: ' . $e->getMessage());
         }
@@ -326,14 +554,27 @@ class ProjectAdditionalCostController extends Controller
     /**
      * Delete one-time additional cost
      */
-    public function destroy(Project $project, ProjectAdditionalCost $additionalCost)
+    public function destroy(Request $request, Project $project, ProjectAdditionalCost $additionalCost)
     {
         // Authorization check
         if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => 'Access denied. Only administrators can delete costs.'
+                ], 403);
+            }
             abort(403, 'Access denied. Only administrators can delete costs.');
         }
 
         if (!$additionalCost->canBeDeleted()) {
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => 'This cost cannot be deleted because it is invoiced.'
+                ], 403);
+            }
+
             return redirect()->route('projects.additional-costs.index', $project)
                 ->with('error', 'This cost cannot be deleted because it is invoiced.');
         }
@@ -342,12 +583,151 @@ class ProjectAdditionalCostController extends Controller
             $additionalCost->delete();
             Log::info('Additional cost deleted', ['cost_id' => $additionalCost->id]);
 
+            // Als JSON request (van modal), return JSON success
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Cost deleted successfully.'
+                ]);
+            }
+
             return redirect()->route('projects.additional-costs.index', $project)
                 ->with('success', 'Additional cost deleted successfully.');
 
         } catch (\Exception $e) {
             Log::error('Error deleting additional cost', ['error' => $e->getMessage()]);
+
+            // Als JSON request, return JSON error
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+
             return back()->with('error', 'Error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update additional cost without project parameter (voor modals)
+     */
+    public function updateDirect(Request $request, ProjectAdditionalCost $projectAdditionalCost)
+    {
+        // Authorization check
+        $project = $projectAdditionalCost->project;
+
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin', 'project_manager'])) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'Access denied. Only managers can edit costs.'], 403);
+            }
+            abort(403, 'Access denied. Only managers can edit costs.');
+        }
+
+        if (!$projectAdditionalCost->canBeEdited()) {
+            if ($request->expectsJson()) {
+                return response()->json(['error' => 'This cost cannot be edited because it is already invoiced.'], 403);
+            }
+            return back()->with('error', 'This cost cannot be edited because it is already invoiced.');
+        }
+
+        // Dynamische validatie regels op basis van calculation_type
+        $rules = [
+            'name' => 'required|string|max:255',
+            'description' => 'nullable|string',
+            'calculation_type' => 'required|in:fixed_amount,hourly_rate',
+            'fee_type' => 'required|in:in_fee,additional',
+            'cost_type' => 'required|in:one_time,monthly_recurring',
+            'notes' => 'nullable|string',
+        ];
+
+        // Voeg calculation-specifieke validatie toe
+        $calculationType = $request->input('calculation_type', 'fixed_amount');
+
+        if ($calculationType === 'fixed_amount') {
+            $rules['amount'] = 'required|numeric|min:0';
+        } elseif ($calculationType === 'hourly_rate') {
+            $rules['hours'] = 'required|numeric|min:0';
+            $rules['hourly_rate'] = 'required|numeric|min:0';
+        }
+
+        // Voeg date validatie toe voor monthly_recurring
+        if ($request->input('cost_type') === 'monthly_recurring') {
+            $rules['start_date'] = 'required|date';
+            $rules['end_date'] = 'nullable|date|after:start_date';
+        }
+
+        $validated = $request->validate($rules);
+
+        try {
+            $updateData = [
+                'name' => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'calculation_type' => $validated['calculation_type'],
+                'fee_type' => $validated['fee_type'],
+                'cost_type' => $validated['cost_type'],
+                'auto_invoice' => 1, // Altijd auto invoice enabled
+                'notes' => $validated['notes'] ?? null,
+            ];
+
+            // Voeg calculation-specifieke velden toe
+            if ($calculationType === 'fixed_amount') {
+                $updateData['amount'] = $validated['amount'];
+                $updateData['hourly_rate'] = null;
+                $updateData['hours'] = null;
+            } elseif ($calculationType === 'hourly_rate') {
+                $updateData['hours'] = $validated['hours'];
+                $updateData['hourly_rate'] = $validated['hourly_rate'];
+                $updateData['amount'] = $validated['hours'] * $validated['hourly_rate'];
+            }
+
+            // Voeg date velden toe als monthly_recurring
+            if ($validated['cost_type'] === 'monthly_recurring') {
+                $updateData['start_date'] = $validated['start_date'];
+                $updateData['end_date'] = $validated['end_date'] ?? null;
+            }
+
+            $projectAdditionalCost->update($updateData);
+
+            Log::info('Additional cost updated via modal', ['cost_id' => $projectAdditionalCost->id]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cost updated successfully.',
+                'cost' => $projectAdditionalCost->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error updating additional cost via modal', ['error' => $e->getMessage()]);
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Delete additional cost without project parameter (voor modals)
+     */
+    public function destroyDirect(Request $request, ProjectAdditionalCost $projectAdditionalCost)
+    {
+        // Authorization check
+        if (!in_array(Auth::user()->role, ['super_admin', 'admin'])) {
+            return response()->json(['error' => 'Access denied. Only administrators can delete costs.'], 403);
+        }
+
+        if (!$projectAdditionalCost->canBeDeleted()) {
+            return response()->json(['error' => 'This cost cannot be deleted because it is invoiced.'], 403);
+        }
+
+        try {
+            $projectAdditionalCost->delete();
+            Log::info('Additional cost deleted via modal', ['cost_id' => $projectAdditionalCost->id]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Cost deleted successfully.'
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error deleting additional cost via modal', ['error' => $e->getMessage()]);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 

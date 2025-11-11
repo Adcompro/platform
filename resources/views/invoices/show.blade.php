@@ -36,13 +36,25 @@
                     
                     @if($invoice->status === 'draft')
                     @if(in_array(Auth::user()->role, ['super_admin', 'admin']))
-                    <a href="{{ route('invoices.edit', $invoice) }}" 
+                    <a href="{{ route('invoices.edit', $invoice) }}"
                        class="inline-flex items-center px-4 py-2 bg-indigo-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-indigo-700 focus:bg-indigo-700 active:bg-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition ease-in-out duration-150">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                         </svg>
                         Edit Invoice
                     </a>
+                    @endif
+                    @endif
+
+                    @if($invoice->status === 'finalized')
+                    @if(in_array(Auth::user()->role, ['super_admin', 'admin']))
+                    <button onclick="confirmUnfinalize()"
+                       class="inline-flex items-center px-4 py-2 bg-orange-600 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-orange-700 focus:bg-orange-700 active:bg-orange-900 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                        </svg>
+                        Revert to Draft
+                    </button>
                     @endif
                     @endif
 
@@ -143,9 +155,6 @@
                             <h4 class="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">Bill To</h4>
                             <div class="text-sm">
                                 <div class="font-medium text-gray-900">{{ $invoice->customer->name }}</div>
-                                @if($invoice->customer->company)
-                                <div class="text-gray-600">{{ $invoice->customer->company }}</div>
-                                @endif
                                 @if($invoice->customer->address)
                                 <div class="text-gray-600 whitespace-pre-line mt-1">{{ $invoice->customer->address }}</div>
                                 @endif
@@ -191,18 +200,29 @@
                     <!-- Budget Overview -->
                     @if($invoice->monthly_budget > 0 || $invoice->previous_month_remaining > 0)
                     @php
-                        // Calculate invoice total ex VAT
+                        // Calculate budget usage (work + service, inclusief in_fee costs)
                         $workServiceLines = $invoice->lines->whereIn('category', ['work', 'service'])->where('defer_to_next_month', false);
                         $workServiceSubtotal = $workServiceLines->sum('line_total_ex_vat');
+
+                        // In Fee costs tellen mee bij budget usage
+                        $inFeeCosts = $invoice->lines->where('category', 'cost')->where('is_billable', false)->where('defer_to_next_month', false);
+                        $inFeeCostsTotal = $inFeeCosts->sum('line_total_ex_vat');
+
+                        // Additional costs (billable) zijn EXTRA bovenop budget
                         $billableCosts = $invoice->lines->where('category', 'cost')->where('is_billable', true)->where('defer_to_next_month', false);
                         $billableCostsTotal = $billableCosts->sum('line_total_ex_vat');
-                        $invoiceTotalExVat = $workServiceSubtotal + $billableCostsTotal;
-                        
-                        // Calculate rollover
+
+                        // Budget usage = work + service + in_fee costs
+                        $budgetUsed = $workServiceSubtotal + $inFeeCostsTotal;
+
+                        // Invoice total = budget usage + additional costs (voor klant factuur)
+                        $invoiceTotalExVat = $budgetUsed + $billableCostsTotal;
+
+                        // Rollover berekening: ALLEEN gebaseerd op budget usage (NIET additional costs)
                         $previousRemaining = $invoice->previous_month_remaining ?? 0;
                         $monthlyBudget = $invoice->monthly_budget ?? 0;
                         $availableBudget = $previousRemaining + $monthlyBudget;
-                        $rollover = $availableBudget - $invoiceTotalExVat;
+                        $rollover = $monthlyBudget - $budgetUsed; // KRITIEK: Gebruik monthly_budget, niet available!
                     @endphp
                     <div class="mb-8 p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
                         <h4 class="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Budget Overview</h4>
@@ -219,15 +239,15 @@
                                 <div class="text-lg font-bold text-gray-900">€{{ number_format($monthlyBudget, 2) }}</div>
                             </div>
                             
-                            <!-- Invoice Total -->
+                            <!-- Budget Used -->
                             <div class="bg-white rounded p-3">
-                                <div class="text-xs text-gray-600 uppercase">Invoice Total</div>
-                                <div class="text-lg font-bold text-blue-600">€{{ number_format($invoiceTotalExVat, 2) }}</div>
+                                <div class="text-xs text-gray-600 uppercase">Used from Budget</div>
+                                <div class="text-lg font-bold text-blue-600">€{{ number_format($budgetUsed, 2) }}</div>
                             </div>
-                            
+
                             <!-- Available Budget -->
                             <div class="bg-white rounded p-3">
-                                <div class="text-xs text-gray-600 uppercase">Available Budget</div>
+                                <div class="text-xs text-gray-600 uppercase">Total Available</div>
                                 <div class="text-lg font-bold text-gray-900">€{{ number_format($availableBudget, 2) }}</div>
                             </div>
                             
@@ -244,10 +264,10 @@
 
                     <!-- Additional Costs Section -->
                     @php
-                        $additionalCostLines = $invoice->lines->where('category', 'cost');
+                        $additionalCostLines = $invoice->lines->where('category', 'cost')->where('defer_to_next_month', false);
                         $hasAdditionalCosts = $additionalCostLines->count() > 0;
                     @endphp
-                    
+
                     @if($hasAdditionalCosts)
                     <div class="mb-8">
                         <h4 class="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Additional Costs</h4>
@@ -294,7 +314,7 @@
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-200">
-                                    @foreach($invoice->lines->where('category', '!=', 'cost') as $line)
+                                    @foreach($invoice->lines->where('category', '!=', 'cost')->where('defer_to_next_month', false) as $line)
                                     @php
                                         // Determine line type and styling for hierarchical display
                                         $indentClass = '';
@@ -399,6 +419,38 @@
                     <div class="mt-8 pt-6 border-t border-gray-200">
                         <h4 class="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-2">Notes</h4>
                         <p class="text-sm text-gray-600 whitespace-pre-line">{{ $invoice->notes }}</p>
+                    </div>
+                    @endif
+
+                    <!-- Deferred Items (Not Invoiced This Period) -->
+                    @php
+                        $deferredLines = $invoice->lines->where('defer_to_next_month', true);
+                    @endphp
+                    @if($deferredLines->count() > 0)
+                    <div class="mt-8 pt-6 border-t border-gray-200">
+                        <h4 class="text-sm font-semibold text-orange-900 uppercase tracking-wide mb-2 flex items-center">
+                            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            Items Deferred to Next Month
+                        </h4>
+                        <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                            <p class="text-xs text-orange-700 mb-3">The following items were deferred and will be included in the next month's invoice:</p>
+                            <div class="space-y-2">
+                                @foreach($deferredLines as $deferredLine)
+                                <div class="flex justify-between items-center text-sm">
+                                    <span class="text-gray-700">{{ $deferredLine->description }}</span>
+                                    <span class="text-gray-500">{{ $deferredLine->quantity }} {{ $deferredLine->unit }} × €{{ number_format($deferredLine->unit_price, 2) }} = €{{ number_format($deferredLine->line_total_ex_vat, 2) }}</span>
+                                </div>
+                                @endforeach
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-orange-300">
+                                <div class="flex justify-between">
+                                    <span class="text-sm font-medium text-orange-800">Total Deferred:</span>
+                                    <span class="text-sm font-bold text-orange-900">€{{ number_format($deferredLines->sum('line_total_ex_vat'), 2) }}</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     @endif
 
@@ -793,21 +845,41 @@ function confirmDeleteInvoice(invoiceId) {
         form.method = 'POST';
         form.action = `/invoices/${invoiceId}`;
         form.style.display = 'none';
-        
+
         // Add CSRF token
         const csrfField = document.createElement('input');
         csrfField.type = 'hidden';
         csrfField.name = '_token';
         csrfField.value = '{{ csrf_token() }}';
         form.appendChild(csrfField);
-        
+
         // Add DELETE method
         const methodField = document.createElement('input');
         methodField.type = 'hidden';
         methodField.name = '_method';
         methodField.value = 'DELETE';
         form.appendChild(methodField);
-        
+
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function confirmUnfinalize() {
+    if (confirm('⚠️ Revert to Draft?\n\nThis will:\n• Change invoice status back to draft\n• Allow you to make changes and defer items\n• Unlink finalized time entries\n• Restore any deferred items\n\nYou can finalize it again after making changes.\n\nContinue?')) {
+        // Create form for POST request
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ route("invoices.unfinalize", $invoice) }}';
+        form.style.display = 'none';
+
+        // Add CSRF token
+        const csrfField = document.createElement('input');
+        csrfField.type = 'hidden';
+        csrfField.name = '_token';
+        csrfField.value = '{{ csrf_token() }}';
+        form.appendChild(csrfField);
+
         document.body.appendChild(form);
         form.submit();
     }

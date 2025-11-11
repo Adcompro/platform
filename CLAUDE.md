@@ -1,5 +1,780 @@
 # 🚀 Optimale Laravel 12 Coding Prompt - COMPLETE VERSIE v5.10
 
+## 🚀 RECENT UPDATES (10-11-2025 - Part 18)
+
+### 📅 DEFERRED TIME ENTRIES - CROSS-MONTH VISIBILITY (10-11-2025)
+
+**NIEUWE FUNCTIONALITEIT**: Complete implementatie van deferred time entries met cross-month visibility in recurring project series.
+
+#### Het Probleem
+Wanneer tijdregistraties in een factuur worden uitgesteld naar de volgende maand (via "defer to next month" checkbox), waren deze entries:
+- ✅ Zichtbaar in het originele project met een oranje "DEFERRED" badge
+- ❌ NIET zichtbaar in het project van de volgende maand
+- ❌ User statistics telden mogelijk dubbele uren
+
+Dit maakte het lastig om een compleet overzicht te krijgen van alle te factureren uren per maand.
+
+---
+
+#### De Oplossing - Complete Cross-Month Implementation
+
+**A. Backend Logic (ProjectController.php - getTimeEntries method)**
+
+**Automatische Detectie van Vorige Project:**
+```php
+// Als dit project deel uitmaakt van een recurring series, haal deferred entries op van vorige maand
+$deferredFromPrevious = collect([]);
+if ($project->recurring_series_id && $project->start_date) {
+    // Zoek het vorige project in dezelfde recurring series (op basis van start_date)
+    $previousProject = Project::where('recurring_series_id', $project->recurring_series_id)
+        ->where('start_date', '<', $project->start_date)
+        ->orderBy('start_date', 'desc')
+        ->first();
+
+    if ($previousProject) {
+        // Haal time entries op die in het vorige project zijn uitgesteld naar deze maand
+        $deferredFromPrevious = \App\Models\TimeEntry::where('project_id', $previousProject->id)
+            ->with(['user', 'milestone', 'task', 'subtask', 'invoice', 'invoiceLine'])
+            ->whereHas('invoiceLine', function($query) {
+                $query->where('defer_to_next_month', true);
+            })
+            ->orderBy('entry_date', 'desc')
+            ->get();
+    }
+}
+
+// Merge entries (eerst deferred, dan normale entries)
+$allEntries = $deferredFromPrevious->merge($timeEntries);
+```
+
+**Speciale Flags voor Frontend:**
+```php
+return [
+    // ... other fields
+    'was_previously_deferred' => $isFromPreviousMonth ? true : $entry->was_previously_deferred,
+    'from_previous_month' => $isFromPreviousMonth, // Extra info voor frontend
+];
+```
+
+**Statistics met Correcte Scheiding:**
+```php
+'stats' => [
+    'total_entries' => $allEntries->count(),           // Inclusief deferred
+    'deferred_entries' => $deferredFromPrevious->count(), // Alleen deferred
+    'current_month_entries' => $timeEntries->count(),  // Alleen deze maand
+    'total_hours' => floor($totalDuration),
+    'total_minutes' => ($totalMinutes + ($totalHours * 60)) % 60,
+],
+```
+
+**KRITIEK: User Stats ALLEEN Deze Maand:**
+```php
+// Bereken uren per user ALLEEN voor entries gelogd in deze maand (niet deferred entries)
+$userStats = $timeEntries->groupBy('user_id')->map(function($entries, $userId) {
+    // ... calculations only on $timeEntries, NOT $allEntries
+});
+```
+
+---
+
+**B. Frontend Display (show.blade.php)**
+
+**Deferred Badge Logic** (lines 1843-1865):
+```javascript
+// Deferred badge met tooltip - HARDCODED HEX KLEUREN
+let deferredBadge = '<span style="color: #9ca3af; font-size: 14px;">-</span>';
+
+if (entry.was_deferred && entry.invoice_period_start) {
+    // Entry is deferred to next month - ORANJE BADGE
+    deferredBadge = `<div style="display: flex; flex-direction: column; align-items: center;">
+        <span style="background-color: #fed7aa; color: #ea580c; border: 1px solid #fdba74;">
+            <i class="fas fa-arrow-right"></i>DEFERRED
+        </span>
+        <span>→ ${entry.invoice_period_start}</span>
+    </div>`;
+} else if (entry.was_previously_deferred && entry.invoice_period_start && entry.entry_month !== entry.invoice_period_start) {
+    // Entry was moved FROM an earlier month (imported from defer) - BLAUWE BADGE
+    deferredBadge = `<div style="display: flex; flex-direction: column; align-items: center;">
+        <span style="background-color: #dbeafe; color: #2563eb; border: 1px solid #93c5fd;">
+            <i class="fas fa-info-circle"></i>FROM ${entry.entry_month}
+        </span>
+        <span>Billed in ${entry.invoice_period_start}</span>
+    </div>`;
+}
+```
+
+**Enhanced Statistics Cards** (lines 1122-1141):
+```html
+<div class="grid grid-cols-4 gap-4">
+    <!-- Total Entries (all entries) -->
+    <div>Total Entries: <span id="stat-total-entries">-</span></div>
+
+    <!-- This Month (only current month) -->
+    <div>This Month: <span id="stat-current-month-entries">-</span></div>
+
+    <!-- From Previous (deferred entries) - BLAUW -->
+    <div style="background-color: #dbeafe; border: 1px solid #93c5fd;">
+        From Previous: <span id="stat-deferred-entries" style="color: #2563eb;">-</span>
+    </div>
+
+    <!-- Total Hours (all hours) -->
+    <div>Total Hours: <span id="stat-total-hours">-</span></div>
+</div>
+```
+
+**User Stats Clarification** (lines 1176-1183):
+```html
+<div style="margin-bottom: 1rem;">
+    <h4>Hours per User</h4>
+    <p style="color: var(--theme-text-muted);">
+        <i class="fas fa-info-circle"></i>
+        Showing only hours logged in this month (deferred entries from previous months are not included)
+    </p>
+</div>
+```
+
+---
+
+#### Database Structuur
+
+**Time Entries Table:**
+```sql
+time_entries:
+  - was_deferred (boolean) - Entry is uitgesteld naar volgende maand (legacy)
+  - was_previously_deferred (boolean) - Entry kwam van vorige maand
+  - invoice_line_id (FK) - Link naar invoice_lines voor defer status
+```
+
+**Invoice Lines Table:**
+```sql
+invoice_lines:
+  - defer_to_next_month (boolean) - **PRIMAIRE BRON** voor defer status
+  - invoice_id (FK) - Link naar invoice
+```
+
+**Projects Table:**
+```sql
+projects:
+  - recurring_series_id (string) - Identifier voor recurring series (bijv. "Huawei retainer 2025")
+  - start_date (date) - Voor sortering binnen serie
+```
+
+---
+
+#### Visual Design - Badge Kleuren
+
+**🟧 Oranje "DEFERRED" Badge:**
+- Background: `#fed7aa` (light orange)
+- Text: `#ea580c` (orange-600)
+- Border: `#fdba74` (orange-300)
+- Betekenis: Entry wordt doorgeschoven NAAR volgende maand
+
+**🔵 Blauwe "FROM [month]" Badge:**
+- Background: `#dbeafe` (light blue)
+- Text: `#2563eb` (blue-600)
+- Border: `#93c5fd` (blue-300)
+- Betekenis: Entry komt VAN vorige maand (deferred import)
+
+**⚪ Grijs Streepje:**
+- Color: `#9ca3af` (gray-400)
+- Betekenis: Normale entry zonder defer status
+
+---
+
+#### Workflow Example: Huawei Retainer Series
+
+**Scenario:**
+- **Project 364**: "Huawei Retainer February 2025" (recurring_series_id: "Huawei retainer 2025")
+- **Project 366**: "Huawei Retainer March 2025" (same series)
+- **Invoice 79**: Factuur voor februari met 40+ uitgestelde "Coverage Reporting" entries
+
+**Wat gebeurt er:**
+
+1. **In Project 364 (February):**
+   - 133 tijdregistraties totaal
+   - 40+ entries hebben `invoice_lines.defer_to_next_month = true`
+   - Deze tonen een 🟧 oranje "DEFERRED → Feb 2025" badge
+
+2. **In Project 366 (March):**
+   - Backend detecteert automatisch project 364 als vorige project in serie
+   - Haalt 40+ deferred entries op via `whereHas('invoiceLine')`
+   - Merged deze met maart entries
+   - Tonen een 🔵 blauwe "FROM Feb 2025" badge
+
+3. **Statistics Breakdown:**
+   - Total Entries: 180 (140 maart + 40 februari)
+   - This Month: 140 (alleen maart registraties)
+   - From Previous: 40 (deferred uit februari)
+   - User Stats: Alleen de 140 maart entries per gebruiker
+
+---
+
+#### Key Technical Decisions
+
+**1. Waarom `recurring_series_id` + `start_date` Sortering?**
+- Projecten in een serie hebben verschillende IDs
+- `start_date` ordering is betrouwbaarder dan project namen (die kunnen variëren)
+- Maakt automatische detectie van "vorige maand" mogelijk
+
+**2. Waarom `invoice_lines.defer_to_next_month` als Primaire Bron?**
+- `time_entries.was_deferred` is legacy en kan out of sync zijn
+- Invoice lines zijn de authoritative source (wat is gefactureerd)
+- Voorkomt inconsistenties bij handmatige edits
+
+**3. Waarom User Stats NIET Deferred Entries Tellen?**
+- Voorkomt dubbele telling (uren telden al in vorige maand)
+- Geeft duidelijk overzicht van werkelijk gewerkte uren deze maand
+- Tekstuele clarification voorkomt verwarring
+
+**4. Waarom Hardcoded Hex Kleuren ipv CSS Variables?**
+- CSS variables laden soms niet correct in modals
+- Hardcoded hex is 100% betrouwbaar
+- Consistent kleurgebruik voor defer badges (zie Part 16 voor details)
+
+---
+
+#### Testing Checklist
+
+Voor nieuwe recurring project series met deferred entries:
+
+```bash
+# 1. Check recurring series setup
+mysql> SELECT id, name, recurring_series_id, start_date
+       FROM projects
+       WHERE recurring_series_id = 'your_series_name'
+       ORDER BY start_date;
+
+# 2. Check deferred entries in previous month
+mysql> SELECT COUNT(*) as deferred_count
+       FROM time_entries te
+       JOIN invoice_lines il ON te.invoice_line_id = il.id
+       WHERE te.project_id = [PREVIOUS_PROJECT_ID]
+       AND il.defer_to_next_month = 1;
+
+# 3. Test frontend visibility
+# - Open current month project: https://progress.adcompro.app/projects/[ID]
+# - Klik "Time Entries" modal
+# - Verwacht: Blauwe "FROM [month]" badges voor deferred entries
+# - Verwacht: Statistics tonen "From Previous: X"
+# - Verwacht: User stats tonen alleen deze maand
+
+# 4. Check logs
+tail -100 /var/www/vhosts/adcompro.app/progress.adcompro.app/storage/logs/laravel.log | grep "Deferred entries from previous month"
+```
+
+---
+
+#### Known Limitations & Future Improvements
+
+**Huidige Beperkingen:**
+- Werkt alleen voor projecten met `recurring_series_id`
+- Detecteert alleen directe vorige maand (geen multi-month defer)
+- Geen automatische carry-forward naar nieuwe factuur (handmatig proces)
+
+**Mogelijke Toekomstige Features:**
+- Multi-month defer support (bijv. februari → april)
+- Automatisch toevoegen van deferred entries aan nieuwe facturen
+- Defer history tracking (welke entries zijn meerdere keren deferred)
+- Bulk defer operations (alle entries van milestone defer)
+
+---
+
+#### Code Locations Summary
+
+**Backend:**
+- `app/Http/Controllers/ProjectController.php` - `getTimeEntries()` method (lines 3307-3430)
+  - Previous project detection (lines 3321-3348)
+  - Entry merging (line 3351)
+  - Statistics calculation (lines 3353-3375, 3421-3428)
+  - User stats (alleen $timeEntries, line 3359)
+
+**Frontend:**
+- `resources/views/projects/show.blade.php`
+  - Deferred column header (line 1157)
+  - Statistics cards (lines 1122-1141)
+  - User stats clarification (lines 1176-1183)
+  - Badge generation JavaScript (lines 1843-1865)
+  - Statistics population (lines 1811-1814)
+
+**Database:**
+- `time_entries` table - was_deferred, was_previously_deferred, invoice_line_id
+- `invoice_lines` table - defer_to_next_month (primaire bron)
+- `projects` table - recurring_series_id, start_date
+
+---
+
+### 🎯 Best Practices voor Deferred Entries
+
+**DO's:**
+✅ Gebruik `invoice_lines.defer_to_next_month` als primaire defer status bron
+✅ Merge deferred entries VOOR normale entries (chronologische volgorde)
+✅ Toon duidelijke visual distinction (oranje vs blauwe badges)
+✅ Bereken user stats ALLEEN uit entries van deze maand
+✅ Log previous project detection voor debugging
+✅ Gebruik hardcoded hex kleuren voor badges
+
+**DON'Ts:**
+❌ NOOIT deferred entries meetellen in user statistics
+❌ NOOIT vertrouwen op `time_entries.was_deferred` alleen
+❌ NOOIT CSS variables gebruiken voor defer badges
+❌ NOOIT totale uren tonen zonder breakdown (this month vs previous)
+❌ NOOIT deferred entries verbergen (altijd tonen met badge)
+❌ NOOIT uitgaan van project namen voor serie detection (gebruik recurring_series_id)
+
+---
+
+## 🚀 PREVIOUS UPDATES (08-11-2025 - Part 17)
+
+### 🎯 TIME ENTRY MODAL AUTO-FILTER FEATURE (08-11-2025)
+
+**NIEUWE FUNCTIONALITEIT**: Automatische filtering van tijdregistraties wanneer je een project selecteert in de "Log Time Entry" modal.
+
+#### Het Probleem
+Bij het registreren van tijd wilde je **context zien** - welke tijdregistraties zijn er al voor dit project? Maar de achtergrond lijst toonde alle projecten, wat het lastig maakte om te zien of er al entries waren en hoeveel tijd er al geregistreerd was.
+
+#### De Oplossing - Modal State Persistence met Hidden Inputs
+
+**Wat gebeurt er nu:**
+
+1. **Open "Log Time Entry" modal**
+2. **Selecteer een project** uit de dropdown
+3. **Achtergrond lijst filtert automatisch** en laadt ALLE time entries voor dat project
+4. **Modal blijft open** zodat je direct de context ziet
+5. Project blijft geselecteerd en work items worden automatisch geladen
+
+---
+
+#### Technische Implementatie
+
+**A. Auto-Submit Filters** (lines 917-933):
+```javascript
+// Auto-submit form when select filters change
+const selectFilters = document.querySelectorAll('#filter_project_id, #filter_user_id, #filter_status');
+selectFilters.forEach(select => {
+    select.addEventListener('change', function() {
+        this.form.submit();  // Direct submit bij wijziging
+    });
+});
+```
+
+**B. Filter Background Table Function** (lines 740-781):
+```javascript
+function filterBackgroundTableByProject() {
+    const projectId = document.getElementById('modal_project_id').value;
+    const backgroundFilterDropdown = document.getElementById('filter_project_id');
+
+    // Set background filter to selected project
+    backgroundFilterDropdown.value = projectId;
+
+    if (projectId) {
+        const form = backgroundFilterDropdown.form;
+
+        // KRITIEK: Add hidden inputs to preserve modal state
+        // GET forms genereren eigen URL params, dus we moeten hidden inputs gebruiken
+        const modalInput = document.createElement('input');
+        modalInput.type = 'hidden';
+        modalInput.name = 'modal';
+        modalInput.value = 'open';
+        form.appendChild(modalInput);
+
+        const modalProjectInput = document.createElement('input');
+        modalProjectInput.type = 'hidden';
+        modalProjectInput.name = 'modal_project';
+        modalProjectInput.value = projectId;
+        form.appendChild(modalProjectInput);
+
+        // Submit form - URL wordt: ?project_id=185&modal=open&modal_project=185
+        form.submit();
+    }
+}
+```
+
+**C. Modal State Restoration** (lines 935-960):
+```javascript
+// Check if modal should be reopened after page reload
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('modal') === 'open') {
+    const modalProjectId = urlParams.get('modal_project');
+
+    // Open the modal
+    openTimeEntryModal();
+
+    // Set the project if provided
+    if (modalProjectId) {
+        setTimeout(() => {
+            const modalProjectSelect = document.getElementById('modal_project_id');
+            if (modalProjectSelect) {
+                modalProjectSelect.value = modalProjectId;
+                loadProjectWorkItems();  // Load work items for selected project
+            }
+        }, 100);  // Small delay to ensure DOM is ready
+    }
+
+    // Clean up URL (remove modal parameters)
+    const cleanUrl = new URL(window.location);
+    cleanUrl.searchParams.delete('modal');
+    cleanUrl.searchParams.delete('modal_project');
+    window.history.replaceState({}, '', cleanUrl);
+}
+```
+
+**D. Modal Project Dropdown** (line 630):
+```blade
+<select name="project_id" id="modal_project_id" required
+        onchange="loadProjectWorkItems(); filterBackgroundTableByProject();"
+        class="w-full px-3 py-2...">
+    <option value="">Select Project</option>
+    @foreach($projects as $project)
+        <option value="{{ $project->id }}">
+            {{ $project->name }}@if($project->customer) ({{ $project->customer->name }})@endif
+        </option>
+    @endforeach
+</select>
+```
+
+---
+
+#### Flow Diagram
+
+```
+User Action: Select Project in Modal
+         ↓
+filterBackgroundTableByProject() called
+         ↓
+1. Set background filter dropdown value = selected project
+2. Create hidden input: name="modal" value="open"
+3. Create hidden input: name="modal_project" value="185"
+4. Submit form
+         ↓
+Page reloads with URL: ?project_id=185&modal=open&modal_project=185
+         ↓
+DOMContentLoaded event fires
+         ↓
+Check: urlParams.get('modal') === 'open' ?
+         ↓ YES
+1. openTimeEntryModal()
+2. Set modal_project_id.value = urlParams.get('modal_project')
+3. loadProjectWorkItems()
+4. Clean URL (remove modal/modal_project params)
+         ↓
+Result: Modal is open, project selected, work items loaded, background filtered!
+```
+
+---
+
+#### Key Technical Challenges & Solutions
+
+**Challenge 1: Modal closes on page reload**
+- **Problem**: Form submit causes page reload → modal closes
+- **Solution**: Add modal state to URL parameters, detect on page load, reopen modal
+
+**Challenge 2: URL parameters don't work with GET forms**
+- **Problem**: Setting form.action with URL params gets overwritten by form fields
+- **Solution**: Add hidden input fields instead of URL manipulation
+```javascript
+// ❌ FOUT - Form action wordt overschreven
+form.action = currentUrl.toString();  // GET form ignores this
+
+// ✅ CORRECT - Hidden inputs worden meegenomen in form submit
+const modalInput = document.createElement('input');
+modalInput.type = 'hidden';
+modalInput.name = 'modal';
+form.appendChild(modalInput);
+```
+
+**Challenge 3: Work items not loading after modal reopen**
+- **Problem**: Modal opens but work items dropdown is empty
+- **Solution**: Call `loadProjectWorkItems()` with setTimeout(100ms) delay
+
+**Challenge 4: URL pollution with modal parameters**
+- **Problem**: URL blijft `?modal=open&modal_project=185` na gebruik
+- **Solution**: Clean URL with `window.history.replaceState()` na modal open
+
+---
+
+#### Gewijzigde Bestanden (08-11-2025)
+
+```
+Modified:
+- resources/views/time-entries/index.blade.php
+  → Line 630: Added filterBackgroundTableByProject() to onchange
+  → Lines 740-781: filterBackgroundTableByProject() function
+  → Lines 917-933: Auto-submit filters (uncommented)
+  → Lines 935-960: Modal state restoration on page load
+  → Lines 762-768: resetBackgroundTableFilter() updated
+```
+
+---
+
+#### Key Learnings
+
+**DO's**:
+✅ Use **hidden input fields** for preserving state through GET form submits
+✅ Clean URL parameters after use with `window.history.replaceState()`
+✅ Add small setTimeout delays when manipulating DOM after page load
+✅ Auto-submit filters for instant feedback (uncomment existing code)
+✅ Preserve selected values when reopening modals
+
+**DON'Ts**:
+❌ NOOIT form.action URL wijzigen voor GET forms (wordt genegeerd)
+❌ NOOIT modal state in localStorage (niet persistent genoeg voor reload)
+❌ NOOIT form submit zonder hidden inputs voor state persistence
+❌ NOOIT vergeten om URL parameters op te ruimen na gebruik
+❌ NOOIT loadProjectWorkItems() aanroepen zonder DOM ready check
+
+---
+
+### 📊 TIME ENTRY DEFER VISIBILITY IMPROVEMENTS (08-11-2025)
+
+**BELANGRIJKE VERBETERING**: Complete transparantie voor doorgeschoven tijdregistraties naar andere maanden.
+
+#### 1. **Customer Name in Project Dropdowns**
+**Probleem**: Meerdere klanten hadden identieke projectnamen (bijv. "Retainer maart 2025" voor zowel Huttopia als Idewe), waardoor het onduidelijk was welk project bij welke klant hoorde.
+
+**Oplossing**:
+- TimeEntryController.php: Eager load `customer` relationship bij project queries
+- time-entries/index.blade.php: Toon klantnaam tussen haakjes in dropdowns
+
+```blade
+{{-- Filter dropdown en Create modal --}}
+<option value="{{ $project->id }}">
+    {{ $project->name }}@if($project->customer) ({{ $project->customer->name }})@endif
+</option>
+```
+
+**Resultaat**: "Retainer maart 2025 (Huttopia Nl)" ipv alleen "Retainer maart 2025"
+
+---
+
+#### 2. **Defer Information in Time Entries List**
+**Probleem**: Bij tijdregistraties die doorgeschoven worden naar een volgende maand, was niet zichtbaar:
+- Welke entries zijn doorgeschoven (en naar welke maand)
+- In de oorspronkelijke maand: dat entries NIET meetellen voor facturatie die maand
+
+**Voorbeeld**: Bij Anker waren 4 entries van 27-29 augustus doorgeschoven naar september factuur. In augustus overzicht was niet te zien dat deze entries niet meetelden voor augustus facturatie.
+
+**Oplossing** (time-entries/index.blade.php):
+
+**A. Currently Deferred (Orange indicator)**:
+```blade
+{{-- Entry wordt gefactureerd in latere maand --}}
+@if($entry->was_deferred && $entry->deferred_at)
+    <div style="color: var(--theme-text-muted); margin-top: 0.25rem;">
+        Deferred on {{ $entry->deferred_at->format('M j, Y') }}
+        @if($entry->invoice && $entry->invoice->period_start)
+            <br><strong style="color: #f97316;">→ Moved to: {{ \Carbon\Carbon::parse($entry->invoice->period_start)->format('M Y') }}</strong>
+            @if($entry->invoice->invoice_number)
+                (Invoice #{{ $entry->invoice->invoice_number }})
+            @endif
+        @endif
+    </div>
+@endif
+```
+
+**B. Previously Deferred (Blue warning box)** - KRITIEK!:
+```blade
+{{-- Entry kwam van eerdere maand - telt NIET mee in deze maand --}}
+@if($entry->was_previously_deferred && $entry->invoice && $entry->invoice->period_start)
+    @php
+        $entryMonth = \Carbon\Carbon::parse($entry->entry_date ?? $entry->date);
+        $invoiceMonth = \Carbon\Carbon::parse($entry->invoice->period_start);
+        // Alleen tonen als maanden verschillen
+        $showPreviouslyDeferred = ($entryMonth->format('Y-m') !== $invoiceMonth->format('Y-m'));
+    @endphp
+    @if($showPreviouslyDeferred)
+        <div style="padding: 0.25rem 0.5rem; background-color: rgba(59, 130, 246, 0.1);
+                    border-left: 3px solid #3b82f6; border-radius: 4px;">
+            <strong style="color: #3b82f6;">⚠️ NOT invoiced in {{ $entryMonth->format('M Y') }}</strong>
+            <br>Moved to {{ $invoiceMonth->format('M Y') }}
+            @if($entry->invoice->invoice_number)
+                (Invoice #{{ $entry->invoice->invoice_number }})
+            @endif
+        </div>
+    @endif
+@endif
+```
+
+**Controller Updates** (TimeEntryController.php line 128):
+```php
+// Eager load invoice data voor defer informatie
+$query = TimeEntry::with(['user', 'project.customer', 'milestone', 'task', 'approver', 'deferredBy', 'invoice']);
+```
+
+---
+
+#### 3. **Defer Information in Project Time Entries Modal** (NIEUW!)
+**Probleem**: De project detail pagina (bijv. https://progress.adcompro.app/projects/185) toont een modal met tijdregistraties, maar deze toonde GEEN defer informatie.
+
+**Oplossing - Complete Implementatie**:
+
+**A. Backend API Update** (ProjectController.php):
+
+**Line 3145 - Eager Loading**:
+```php
+$timeEntries = $project->timeEntries()
+    ->with(['user', 'milestone', 'task', 'subtask', 'invoice'])  // Added 'invoice'
+    ->orderBy('entry_date', 'desc')
+    ->get();
+```
+
+**Lines 3197-3206 - JSON Response**:
+```php
+return [
+    'id' => $entry->id,
+    'entry_date' => $entry->entry_date->format('d-m-Y'),
+    // ... existing fields
+    // Defer information
+    'was_deferred' => $entry->was_deferred,
+    'was_previously_deferred' => $entry->was_previously_deferred,
+    'deferred_at' => $entry->deferred_at ? $entry->deferred_at->format('M j, Y') : null,
+    'defer_reason' => $entry->defer_reason,
+    'invoice_period_start' => $entry->invoice && $entry->invoice->period_start ?
+        \Carbon\Carbon::parse($entry->invoice->period_start)->format('M Y') : null,
+    'invoice_number' => $entry->invoice ? $entry->invoice->invoice_number : null,
+    'entry_month' => $entry->entry_date->format('M Y'),
+];
+```
+
+**B. Frontend JavaScript Update** (show.blade.php):
+
+**Lines 1688-1725 - Helper Function**:
+```javascript
+// Helper functie om defer informatie HTML te genereren
+function getDeferInfoHTML(entry) {
+    let deferHTML = '';
+
+    // Currently deferred (will be invoiced later)
+    if (entry.was_deferred && entry.deferred_at) {
+        deferHTML += '<div style="font-size: calc(var(--theme-font-size) - 4px); color: var(--theme-text-muted); margin-top: 0.25rem;">';
+        deferHTML += `Deferred on ${entry.deferred_at}`;
+
+        if (entry.invoice_period_start) {
+            deferHTML += `<br><strong style="color: #f97316;">→ Moved to: ${entry.invoice_period_start}</strong>`;
+            if (entry.invoice_number) {
+                deferHTML += ` (Invoice #${entry.invoice_number})`;
+            }
+        }
+
+        if (entry.defer_reason) {
+            deferHTML += `<br>${entry.defer_reason}`;
+        }
+
+        deferHTML += '</div>';
+    }
+
+    // Previously deferred (was moved FROM an earlier month)
+    if (entry.was_previously_deferred && entry.invoice_period_start && entry.entry_month !== entry.invoice_period_start) {
+        deferHTML += '<div style="padding: 0.25rem 0.5rem; background-color: rgba(59, 130, 246, 0.1); border-left: 3px solid #3b82f6; border-radius: 4px;">';
+        deferHTML += `<strong style="color: #3b82f6;">⚠️ NOT invoiced in ${entry.entry_month}</strong>`;
+        deferHTML += `<br>Moved to ${entry.invoice_period_start}`;
+
+        if (entry.invoice_number) {
+            deferHTML += ` (Invoice #${entry.invoice_number})`;
+        }
+
+        deferHTML += '</div>';
+    }
+
+    return deferHTML;
+}
+```
+
+**Line 1765 - Render in Table**:
+```javascript
+<td style="padding: 0.75rem 1rem;">
+    <div style="...">
+        ${entry.description || '<em>No description</em>'}
+    </div>
+    ${getDeferInfoHTML(entry)}  // ← NIEUW!
+</td>
+```
+
+---
+
+### 📊 Database Fields voor Defer Tracking
+
+**time_entries tabel**:
+```sql
+-- Defer status tracking
+was_deferred              BOOLEAN      -- Entry is doorgeschoven naar volgende maand
+deferred_at               TIMESTAMP    -- Wanneer doorgeschoven
+deferred_by               FK users     -- Wie heeft doorgeschoven
+defer_reason              TEXT         -- Reden voor doorschuiven
+
+-- Previously deferred tracking
+was_previously_deferred   BOOLEAN      -- Entry kwam van eerdere maand
+previous_deferred_at      TIMESTAMP    -- Originele defer datum
+previous_defer_reason     TEXT         -- Originele reden
+
+-- Invoice koppeling
+invoice_id                FK invoices  -- Aan welke factuur gekoppeld
+```
+
+**invoices tabel**:
+```sql
+period_start              DATE         -- Start van factuurperiode (voor maand identificatie)
+period_end                DATE         -- Einde van factuurperiode
+invoice_number            STRING       -- Factuurnummer (bijv. INV-2025-0002)
+```
+
+---
+
+### 🎯 Impact & Business Value
+
+**Transparantie**:
+- ✅ **Directe zichtbaarheid** welke uren in welke maand gefactureerd worden
+- ✅ **Duidelijke waarschuwing** in oorspronkelijke maand dat uren niet meetellen
+- ✅ **Volledige audit trail** met factuur nummers en datums
+
+**User Experience**:
+- ✅ **Consistente weergave** in zowel hoofdlijst als project modal
+- ✅ **Visuele indicators**: Oranje voor toekomstige moves, blauw voor historische moves
+- ✅ **Context informatie**: Factuur nummer en periode altijd zichtbaar
+
+**Voorbeeld - Anker Project**:
+- **Augustus 2025 view**: Toont 4 entries (27-29 aug) met BLAUWE BOX "⚠️ NOT invoiced in Aug 2025 - Moved to Sep 2025"
+- **September 2025 view**: Toont dezelfde 4 entries met ORANJE tekst "→ Moved to: Sep 2025 (Invoice #INV-2025-0002)"
+
+---
+
+### 🔧 Gewijzigde Bestanden (08-11-2025)
+
+```
+Modified:
+- app/Http/Controllers/TimeEntryController.php (line 128, 170)
+  → Eager load customer + invoice relationships
+
+- resources/views/time-entries/index.blade.php (lines 98-103, 602-606, 373-413)
+  → Customer name in dropdowns
+  → Defer information display (orange + blue indicators)
+
+- app/Http/Controllers/ProjectController.php (lines 3145, 3197-3206)
+  → getTimeEntries() method: invoice eager loading + defer fields in JSON
+
+- resources/views/projects/show.blade.php (lines 1688-1725, 1765)
+  → getDeferInfoHTML() JavaScript helper function
+  → Defer information in modal table
+```
+
+---
+
+### 🎓 Key Learnings
+
+**DO's**:
+✅ Toon ALTIJD duidelijk welke tijdregistraties NIET meetellen in een maand (blauwe warning box)
+✅ Gebruik visuele kleur-codering: Oranje voor toekomstige moves, Blauw voor historische moves
+✅ Houd defer informatie consistent tussen verschillende views (lijst vs modal)
+✅ Voeg klantnaam toe aan project dropdowns bij meerdere identieke projectnamen
+✅ Eager load relationships voor betere performance (customer, invoice)
+
+**DON'Ts**:
+❌ NOOIT defer informatie verbergen - transparantie is kritiek
+❌ NOOIT alleen tonen dat entry deferred is zonder te tonen NAAR welke maand
+❌ NOOIT vergeten om maand-vergelijking te doen (entry_month vs invoice_month)
+❌ NOOIT project dropdowns zonder customer naam bij duplicate project namen
+
+---
+
 ## 🔄 TEAMLEADER FOCUS IMPORT SYSTEEM - COMPLETE DOCUMENTATIE (21-10-2025)
 
 ### 📋 Overzicht
@@ -363,6 +1138,57 @@ USERS IMPORT:
 ❌ NOOIT customer contacts als team members importeren zonder filter
 ❌ NOOIT imports starten zonder timeout configuration
 ❌ NOOIT API responses zonder wrapping check ($response['data'] ?? $response)
+
+---
+
+## 🚀 RECENT UPDATES (10-11-2025 - Part 17)
+
+### 📊 EXCEL-LIKE SPREADSHEET VIEW FOR INVOICES (10-11-2025)
+
+**NIEUWE FEATURE**: Complete Excel-achtige spreadsheet interface voor snelle invoice editing met merge en defer functionaliteit.
+
+#### ✨ Key Features:
+1. **Excel-like Interface**
+   - Calibri font, zebra striping, sticky header
+   - Contenteditable cellen voor instant editing
+   - Auto-calculation van totals
+   - Keyboard navigation (Enter = next row)
+   - Number formatting (2 decimals)
+   - Ctrl+S shortcut voor save
+
+2. **Merge Rows Functionaliteit**
+   - Selecteer 2+ regels met checkboxes
+   - Modal met opties voor description, quantity, price
+   - Combine descriptions / Sum quantities / Weighted average prices
+   - **Undo button** verschijnt na merge
+   - Restore deleted rows op originele positie met event listeners intact
+   - Fixes: `<tbody>` container voor correcte TR parsing, `row.remove()` ipv `innerHTML = ''`
+
+3. **Defer to Next Month (Toggle)**
+   - Selecteer regels → "⏭️ Defer to Next Month" (oranje)
+   - Gele achtergrond + doorgestreepte tekst + emoji in row number
+   - **Dynamic button**: Selecteer deferred regels → button wordt "↩️ Undo Defer" (groen)
+   - Click again = toggle terug naar normaal
+   - Simpele implementatie zonder history (gewoon class toggle)
+
+#### 🔧 Technical Highlights:
+- Route: `/invoices/{id}/spreadsheet`
+- Controller: `InvoiceController::spreadsheet()` + `updateSpreadsheet()`
+- View: `resources/views/invoices/spreadsheet.blade.php`
+- Floating action bar met merge, defer, clear buttons
+- Real-time selected count
+- Filters 0 quantity lines automatisch
+- Cleans milestone/task names uit descriptions
+
+#### 🐛 Kritieke Fixes:
+1. Undo merge: `<tbody>` container + `querySelector('tr')` ipv `firstElementChild`
+2. Event listeners: `row.remove()` ipv `innerHTML = ''` behoud listeners
+3. Row order: Sort by `data-line-id` na restore
+4. Layout shift: Emoji in row number cell ipv absolute ::before
+
+**Files:**
+- `/resources/views/invoices/spreadsheet.blade.php` - Complete view
+- `/app/Http/Controllers/InvoiceController.php` - spreadsheet() + updateSpreadsheet()
 
 ---
 
@@ -1988,6 +2814,177 @@ mysql -u TRIAL_USER -pTRIAL_PASS TRIAL_DB < schema.sql
     - Budget cards met iconen
     - Additional costs in gele sectie
     - Responsive tables met hover states
+
+11. **📊 Excel-like Spreadsheet View** (NIEUW! 10-11-2025)
+    - **Complete spreadsheet interface** voor snelle invoice editing
+    - **Excel-achtige features**: Calibri font, zebra striping, sticky header, number alignment
+    - **Inline editing**: Click cel → direct typen (contenteditable)
+    - **Auto-calculation**: Total herberekent automatisch bij quantity/price wijziging
+    - **Keyboard navigation**: Enter key = volgende rij, zelfde kolom
+    - **Number formatting**: Auto-format naar 2 decimalen bij blur
+
+    **Merge Rows Functionaliteit:**
+    - Selecteer 2+ regels met checkboxes
+    - Klik "🔗 Merge Rows" in floating action bar
+    - **Modal met 3 merge opties**:
+      * Description: Combine all / Keep first / Custom text
+      * Quantity: Sum / Keep first / Average
+      * Price: Keep first / Weighted average / Highest / Lowest
+    - Milestone en Task van eerste rij worden behouden
+    - Andere geselecteerde regels worden verwijderd
+    - **Undo button** verschijnt na merge
+    - Klik "↩️ Undo Merge" = restore alle verwijderde regels op originele positie
+
+    **Defer to Next Month Functionaliteit:**
+    - Selecteer regels die je naar volgende maand wilt doorschuiven
+    - Klik "⏭️ Defer to Next Month" in floating action bar
+    - Regels krijgen **gele achtergrond** + **doorgestreepte tekst** + **⏭️ emoji** in row number
+    - **Toggle functionaliteit**: Selecteer deferred regels → button wordt "↩️ Undo Defer" (groen)
+    - Klik opnieuw = defer wordt ongedaan gemaakt
+    - **Dynamic button**: Oranje voor defer, groen voor undo (update real-time op basis van selectie)
+
+    **Technical Implementation:**
+    ```javascript
+    // Merge History voor Undo
+    let mergeHistory = {
+        firstRow: element,
+        firstRowIndex: number,
+        originalFirstRowData: { description, quantity, price },
+        deletedRows: [{ html, originalIndex, lineId }]
+    };
+
+    // Defer Toggle (simpel, geen history nodig)
+    function deferToNextMonth() {
+        const firstRow = selectedRows[0];
+        const isDeferred = firstRow.classList.contains('deferred');
+
+        selectedRows.forEach(row => {
+            if (isDeferred) {
+                row.classList.remove('deferred'); // Undo
+            } else {
+                row.classList.add('deferred'); // Defer
+            }
+        });
+    }
+
+    // Dynamic Button Update
+    function updateFloatingBar() {
+        const firstRow = checkedCheckboxes[0].closest('tr');
+        const isDeferred = firstRow.classList.contains('deferred');
+
+        if (isDeferred) {
+            deferBtn.innerHTML = '↩️ Undo Defer';
+            deferBtn.style.background = '#10b981'; // Groen
+        } else {
+            deferBtn.innerHTML = '⏭️ Defer to Next Month';
+            deferBtn.style.background = '#f59e0b'; // Oranje
+        }
+    }
+    ```
+
+    **Save Functionaliteit:**
+    - Verzamelt alle rijen met data-line-id
+    - Leest description, quantity, price uit contenteditable cellen
+    - Checkt `.deferred` class voor defer_to_next_month flag
+    - Validatie: Description niet leeg, quantity/price ≥ 0
+    - POST naar `/invoices/{id}/update-spreadsheet`
+    - Redirect naar normale edit view met success message
+
+    **Controller Updates:**
+    ```php
+    // InvoiceController::spreadsheet()
+    $linesData = $invoice->lines->filter(function($line) {
+        return $line->quantity > 0; // Filter 0 quantity lines
+    })->map(function($line) {
+        return [
+            'id' => $line->id,
+            'milestone' => $line->milestone->name ?? '',
+            'task' => $line->task->name ?? '',
+            'description' => cleanDescription($line->description), // Remove milestone/task names
+            'quantity' => (float) $line->quantity,
+            'price' => (float) $line->unit_price,
+            'total' => (float) $line->line_total_ex_vat,
+            'defer_to_next_month' => (bool) $line->defer_to_next_month
+        ];
+    });
+
+    // InvoiceController::updateSpreadsheet()
+    $validated = $request->validate([
+        'lines.*.defer_to_next_month' => 'sometimes|boolean',
+    ]);
+
+    $line->update([
+        'defer_to_next_month' => $lineData['defer_to_next_month'] ?? false,
+    ]);
+    ```
+
+    **CSS Highlights:**
+    ```css
+    /* Excel-like table styling */
+    #spreadsheet-table {
+        font-family: Calibri, 'Segoe UI', sans-serif;
+        border-collapse: collapse;
+        width: 100%;
+    }
+
+    #spreadsheet-table tbody tr:nth-child(even) {
+        background: #f9fafb; /* Zebra striping */
+    }
+
+    /* Deferred rows */
+    tr.deferred {
+        background: #fef3c7 !important; /* Yellow */
+        opacity: 0.6;
+    }
+
+    tr.deferred td {
+        text-decoration: line-through;
+        color: #92400e; /* Brown */
+    }
+
+    tr.deferred .row-number::after {
+        content: '⏭️';
+        margin-left: 4px;
+    }
+
+    /* Floating action bar */
+    #floating-merge-bar {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: white;
+        padding: 12px 24px;
+        border-radius: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    ```
+
+    **Routes:**
+    ```php
+    Route::get('invoices/{invoice}/spreadsheet', [InvoiceController::class, 'spreadsheet'])
+        ->name('invoices.spreadsheet');
+    Route::post('invoices/{invoice}/update-spreadsheet', [InvoiceController::class, 'updateSpreadsheet'])
+        ->name('invoices.update-spreadsheet');
+    ```
+
+    **Kritieke Fixes tijdens Development:**
+    - **Undo Merge Bug**: `tempDiv.firstElementChild` retourneerde `<input>` ipv `<tr>`
+      * Fix: Gebruik `<tbody>` container + `querySelector('tr')`
+    - **Event Listeners Lost**: `innerHTML = ''` verwijderde alle event listeners
+      * Fix: Gebruik `row.remove()` ipv `innerHTML = ''`
+    - **Row Order**: Rows kwamen niet terug in originele volgorde
+      * Fix: Sort by `data-line-id` na restore
+    - **Layout Shift**: Defer label veroorzaakte verschuiving
+      * Fix: Emoji in row number cell ipv absolute positioned ::before
+
+    **User Experience:**
+    - Ctrl+S shortcut voor save
+    - Select All checkbox in header
+    - Real-time selected count in floating bar
+    - Clear selection button
+    - Loading spinner tijdens save
+    - Help guide met alle features uitgelegd
 
 ## 🚀 RECENT UPDATES (26-08-2025 - Part 9)
 

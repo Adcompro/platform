@@ -30,7 +30,6 @@ class Company extends Model
         'phone',
         'website',
         'default_hourly_rate',
-        'vat_rate',
         'status',
         'notes',
         'is_main_invoicing',
@@ -41,7 +40,6 @@ class Company extends Model
 
     protected $casts = [
         'default_hourly_rate' => 'decimal:2',
-        'vat_rate' => 'decimal:2',
         'next_invoice_number' => 'integer',
         'is_main_invoicing' => 'boolean',
         'is_active' => 'boolean',

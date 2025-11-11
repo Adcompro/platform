@@ -1,11 +1,26 @@
 {{-- Project Activity Timeline --}}
-<div class="bg-white shadow rounded-lg overflow-hidden">
-    <div class="px-6 py-4 border-b border-gray-200">
-        <h2 class="text-lg font-medium text-gray-900">Project Activity</h2>
-        <p class="text-sm text-gray-600 mt-1">Track all changes and time entries for this project</p>
+<div class="bg-white/60 backdrop-blur-sm border border-slate-200/60 rounded-xl overflow-hidden">
+    <div class="border-b" style="border-color: rgba(203, 213, 225, 0.3); padding: var(--theme-card-padding); min-height: 60px; display: flex; align-items: center; justify-content: space-between; cursor: pointer;" onclick="toggleProjectActivity()">
+        <div class="flex items-center gap-4" style="flex: 1;">
+            <div class="flex items-center" style="min-width: 280px;">
+                <i id="project-activity-chevron" class="fas fa-chevron-down mr-2 transition-transform" style="color: var(--theme-text-muted); font-size: calc(var(--theme-font-size) - 1px);"></i>
+                <h2 style="font-size: calc(var(--theme-font-size) + 1px); font-weight: 600; color: var(--theme-text); margin: 0;">
+                    <i class="fas fa-history mr-2"></i>
+                    Project Activity
+                </h2>
+            </div>
+            @php
+                $totalActivities = $activities->total();
+            @endphp
+            <div id="project-activity-summary" class="flex items-center gap-6" style="font-size: calc(var(--theme-font-size) + 1px);">
+                <span style="color: var(--theme-text); font-weight: 600; min-width: 200px;">
+                    {{ $totalActivities }} {{ $totalActivities === 1 ? 'activity' : 'activities' }}
+                </span>
+            </div>
+        </div>
     </div>
 
-    <div class="p-6">
+    <div id="project-activity-content" class="hidden" style="padding: var(--theme-card-padding);">
         @if($activities->count() > 0)
             <div class="flow-root">
                 <ul role="list" class="-mb-8">
@@ -18,32 +33,32 @@
 
                                 <div class="relative flex space-x-3">
                                     <div>
-                                        <span class="h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white {{ $activity->activity_badge_class }}">
-                                            <i class="{{ $activity->activity_icon }} text-xs"></i>
+                                        <span class="h-8 w-8 rounded-full flex items-center justify-center ring-8 {{ $activity->activity_badge_class }}" style="background-color: white;">
+                                            <i class="{{ $activity->activity_icon }}" style="font-size: calc(var(--theme-font-size) - 3px);"></i>
                                         </span>
                                     </div>
 
-                                    <div class="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
+                                    <div class="flex min-w-0 flex-1 justify-between space-x-4" style="padding-top: 0.375rem;">
                                         <div>
-                                            <p class="text-sm text-gray-900">
-                                                <span class="font-medium">{{ $activity->user->name }}</span>
-                                                <span class="text-gray-600">{{ $activity->description }}</span>
+                                            <p style="font-size: var(--theme-font-size); color: var(--theme-text);">
+                                                <span style="font-weight: 500;">{{ $activity->user ? $activity->user->name : 'System' }}</span>
+                                                <span style="color: var(--theme-text-muted);">{{ $activity->description }}</span>
                                             </p>
 
                                             {{-- Show changed fields if available --}}
                                             @if($activity->old_values || $activity->new_values)
-                                                <div class="mt-2 text-xs bg-gray-50 rounded-md p-2 border border-gray-200">
-                                                    <div class="font-semibold text-gray-700 mb-1">Changed Fields:</div>
+                                                <div class="mt-2" style="font-size: calc(var(--theme-font-size) - 2px); background-color: rgba(var(--theme-bg-rgb), 0.5); border-radius: var(--theme-border-radius); padding: 0.5rem; border: 1px solid rgba(203, 213, 225, 0.3);">
+                                                    <div style="font-weight: 600; color: var(--theme-text); margin-bottom: 0.25rem;">Changed Fields:</div>
                                                     @if($activity->old_values)
                                                         @foreach($activity->old_values as $field => $oldValue)
                                                             <div class="flex items-center gap-2 mt-1">
-                                                                <span class="text-gray-600">{{ ucfirst(str_replace('_', ' ', $field)) }}:</span>
+                                                                <span style="color: var(--theme-text-muted);">{{ ucfirst(str_replace('_', ' ', $field)) }}:</span>
                                                                 @if($oldValue)
-                                                                    <span class="text-red-600 line-through">{{ $oldValue }}</span>
+                                                                    <span style="color: #ef4444; text-decoration: line-through;">{{ $oldValue }}</span>
                                                                 @endif
                                                                 @if(isset($activity->new_values[$field]))
-                                                                    <span class="text-gray-400">→</span>
-                                                                    <span class="text-green-600 font-medium">{{ $activity->new_values[$field] }}</span>
+                                                                    <span style="color: var(--theme-text-muted);">→</span>
+                                                                    <span style="color: #10b981; font-weight: 500;">{{ $activity->new_values[$field] }}</span>
                                                                 @endif
                                                             </div>
                                                         @endforeach
@@ -53,7 +68,7 @@
 
                                             {{-- Entity type badge --}}
                                             @if($activity->entity_type)
-                                                <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 mt-2">
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded mt-2" style="font-size: calc(var(--theme-font-size) - 3px); font-weight: 500; background-color: rgba(var(--theme-text-muted-rgb), 0.1); color: var(--theme-text-muted);">
                                                     {{ ucfirst($activity->entity_type) }}
                                                     @if($activity->entity_id)
                                                         #{{ $activity->entity_id }}
@@ -62,11 +77,11 @@
                                             @endif
                                         </div>
 
-                                        <div class="whitespace-nowrap text-right text-sm text-gray-500">
+                                        <div class="whitespace-nowrap text-right" style="font-size: var(--theme-font-size); color: var(--theme-text-muted);">
                                             <div>{{ $activity->created_at->format('d-m-Y H:i:s') }}</div>
-                                            <div class="text-xs text-gray-400">{{ $activity->created_at->diffForHumans() }}</div>
+                                            <div style="font-size: calc(var(--theme-font-size) - 2px); color: var(--theme-text-muted); opacity: 0.7;">{{ $activity->created_at->diffForHumans() }}</div>
                                             @if($activity->ip_address)
-                                                <div class="text-xs text-gray-400 mt-1">IP: {{ $activity->ip_address }}</div>
+                                                <div style="font-size: calc(var(--theme-font-size) - 2px); color: var(--theme-text-muted); opacity: 0.7; margin-top: 0.25rem;">IP: {{ $activity->ip_address }}</div>
                                             @endif
                                         </div>
                                     </div>
@@ -83,9 +98,9 @@
             </div>
         @else
             <div class="text-center py-12">
-                <i class="fas fa-history text-gray-300 text-5xl mb-4"></i>
-                <h3 class="text-sm font-medium text-gray-900 mb-1">No activity yet</h3>
-                <p class="text-sm text-gray-500">Activity will appear here as changes are made to the project</p>
+                <i class="fas fa-history" style="color: rgba(var(--theme-text-muted-rgb), 0.3); font-size: calc(var(--theme-font-size) + 32px); margin-bottom: 1rem;"></i>
+                <h3 style="font-size: var(--theme-font-size); font-weight: 500; color: var(--theme-text); margin-bottom: 0.25rem;">No activity yet</h3>
+                <p style="font-size: calc(var(--theme-font-size) - 1px); color: var(--theme-text-muted);">Activity will appear here as changes are made to the project</p>
             </div>
         @endif
     </div>

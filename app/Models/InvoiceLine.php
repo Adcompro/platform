@@ -84,6 +84,22 @@ class InvoiceLine extends Model
     }
 
     /**
+     * Milestone this line is grouped under
+     */
+    public function milestone(): BelongsTo
+    {
+        return $this->belongsTo(ProjectMilestone::class, 'group_milestone_id');
+    }
+
+    /**
+     * Task this line is grouped under
+     */
+    public function task(): BelongsTo
+    {
+        return $this->belongsTo(ProjectTask::class, 'group_task_id');
+    }
+
+    /**
      * Time entries linked to this line
      */
     public function timeEntries(): HasMany
